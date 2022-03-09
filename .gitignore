@@ -1,0 +1,36 @@
+build/
+libs/
+.vscode/
+.cache
+
+# Swap vim
+*~
+*.swp
+*.swo
+
+# Qt
+object_script.*.Release
+object_script.*.Debug
+*_plugin_import.cpp
+/.qmake.cache
+/.qmake.stash
+*.pro.user
+*.pro.user.*
+*.qbs.user
+*.qbs.user.*
+*.moc
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.qmlc
+*.jsc
+*.qm
+*.prl
+*.autosave
+*creator.user*
+*.qmlproject.user
+*.qmlproject.user.*
+compile_commands.json
+*_qmlcache.qrc
+
