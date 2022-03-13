@@ -24,6 +24,7 @@ set(TARGET_NAME module)
 SET(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32F303VCTx_FLASH.ld)
 SET(BOOT_FILE  ${CMAKE_SOURCE_DIR}/startup_stm32f303xc.s)
 
+include_directories(Proto)
 include_directories(Core/Inc)
 include_directories(USB_DEVICE/App)
 include_directories(USB_DEVICE/Target)
