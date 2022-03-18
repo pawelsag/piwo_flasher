@@ -7,6 +7,7 @@ extern "C" {
 #include "proto.hpp"
 
 stm32_config stm_configuration;
+addr_raw_t flash_address;
 
 template<typename T>
 int
@@ -121,14 +122,10 @@ stm32_erase_flash()
 }
 
 int
-stm32_send_data(uint32_t addr, raw_packet data)
+stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, uint8_t chksum)
 {
   const uint8_t cmd[2] = {stm_configuration.wm, (uint8_t)(stm_configuration.wm^0xff)};
-  const uint8_t addr_cmd[4] = { uint8_t(addr>>24),
-                            uint8_t(addr>>16),
-                            uint8_t(addr>>8),
-                            uint8_t(addr)};
-  const uint8_t addr_chsum =  addr_cmd[0] ^ addr_cmd[1] ^ addr_cmd[2] ^ addr_cmd[3];
+  const uint8_t addr_chsum =  addr[0] ^ addr[1] ^ addr[2] ^ addr[3];
   uint8_t response;
   
   stm32_write(cmd, 2);
@@ -138,12 +135,15 @@ stm32_send_data(uint32_t addr, raw_packet data)
     USB_TRANSMIT_STR("Writting to address failed");
     return -1;
   }
+  // send addr
+  stm32_write(addr.data(), addr.size());
 
-  uint32_t data_to_send = data.size();
-  
-  stm32_write(data.data(), data.size());
-  // TODO send checksum
-  //
+  // send payload
+  stm32_write(payload, size);
+
+  // send checksum
+  stm32_write(&chksum, 1);
+
   return 0;
 }
 
@@ -159,15 +159,21 @@ init_transfer()
   HAL_GPIO_WritePin(GPIOC, Reset_Pin, GPIO_PIN_RESET);
 }
 
-
+static void
+reset_transfer()
+{
+  HAL_GPIO_WritePin(GPIOC, Boot_Pin, GPIO_PIN_RESET);
+  HAL_Delay(10);
+  HAL_GPIO_WritePin(GPIOC, Reset_Pin, GPIO_PIN_SET);
+  HAL_Delay(5);
+  HAL_GPIO_WritePin(GPIOC, Reset_Pin, GPIO_PIN_RESET);
+}
 
 
 void
 handle_command(uint8_t *data, uint32_t size)
 {
   raw_packet packet(data, size);
-
-  auto asdf = flash_init_builder::make_flash_init_builder(packet);
 
   auto packet_opt = packet.get_type();
 
@@ -180,12 +186,53 @@ handle_command(uint8_t *data, uint32_t size)
   switch(packet_opt.value())
   {
       case packet_type::INIT:
+        {
+          auto flash_init_opt = flash_init::make_flash_init(packet);
+          if(!flash_init_opt.has_value())
+            return;
+          auto flash_init = flash_init_opt.value();
+
+          init_transfer();
+          stm32_fill_config();
+          stm32_erase_flash();
+          flash_address = flash_init.get_addr_raw();
+        }
         break;
       case packet_type::FRAME:
+        {
+          auto flash_frame_opt = flash_frame::make_flash_frame(packet);
+          if(!flash_frame_opt.has_value())
+            return;
+          auto flash_frame = flash_frame_opt.value();
+          stm32_send_data(flash_address, 
+                          flash_frame.get_payload(),
+                          flash_frame.get_payload_size(),
+                          flash_frame.get_checksum());
+
+        }
         break;
       case packet_type::RESET:
+        {
+          auto flash_init_opt = flash_init::make_flash_init(packet);
+          if(!flash_init_opt.has_value())
+            return;
+          reset_transfer();
+
+          uint8_t reset_done_buf[flash_reset_done_length];
+          raw_packet raw_packet(reset_done_buf, flash_reset_done_length);
+
+         auto flash_reset_done_builder_opt = flash_reset_done_builder::make_flash_reset_done_builder(raw_packet);
+         if(!flash_reset_done_builder_opt.has_value())
+         {
+          USB_TRANSMIT_STR("Packet resetting failed");
+          return;
+         }
+         auto flash_reset_done_builder = *flash_reset_done_builder_opt;
+         flash_reset_done flash_reset_done_packet(flash_reset_done_builder);
+         CDC_Transmit_FS(flash_reset_done_packet.data(), flash_reset_done_packet.size()); 
+        }
         break;
-      case packet_type::RESET_DONE:
+      default:
         break;
   }
 

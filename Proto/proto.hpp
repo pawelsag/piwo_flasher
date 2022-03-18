@@ -145,6 +145,16 @@ public:
     return addr;
   }
 
+  addr_raw_t
+  get_addr_raw() const noexcept
+  {
+    addr_raw_t addr;
+    std::copy_n(this->cdata() + flash_init_addr_pos,
+                flash_init_addr_size,
+                reinterpret_cast<usb_byte_t*>(&addr));
+    return addr;
+  }
+
   size_t
   size() const
   {
@@ -198,11 +208,15 @@ public:
 
     if(flash_frame_max_data_length < current_size+size)
       return false;
-
+    // copy new data
     std::copy_n(reinterpret_cast<const usb_byte_t*>(data),
                 size,
                 this->_raw_packet.begin() + current_size + flash_frame_header_length);
+    // calculate checksum
+    for(uint8_t i =0; i < size; i++) 
+      this->_raw_packet.data()[flash_frame_checksum_pos] ^= data[i];
 
+    // calculate new size and assign it
     current_size += size;
 
     std::copy_n(reinterpret_cast<const usb_byte_t*>(&current_size),
@@ -225,6 +239,8 @@ public:
     packet.data()[common_length_pos] = static_cast<usb_byte_t>( packet_buffer_size );
     packet.data()[common_type_pos] =
       usb_byte_t{ static_cast<uint8_t>(packet_type::FRAME) };
+
+    packet.data()[flash_frame_checksum_pos] = usb_byte_t{0};
 
     return flash_frame_builder(packet);
   }
@@ -264,6 +280,12 @@ public:
   get_payload_size()
   {
     return static_cast<uint8_t>(this->cdata()[flash_frame_payload_size_pos]);
+  }
+
+  uint8_t
+  get_checksum()
+  {
+    return static_cast<uint8_t>(this->cdata()[flash_frame_checksum_pos]);
   }
 
   size_t
