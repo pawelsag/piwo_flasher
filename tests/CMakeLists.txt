@@ -7,6 +7,7 @@ set (TESTS
   flasher_frame_test.cc
   flasher_reset_test.cc
   flasher_reset_done_test.cc
+  flasher_msg_test.cc
 )
 
 find_library(libgtest gtest REQUIRED)

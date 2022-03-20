@@ -35,10 +35,6 @@ extern UART_HandleTypeDef huartx;
 
 uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
 
-#define USB_TRANSMIT(data, len) CDC_Transmit_FS((uint8_t*)data, len)
-#define USB_TRANSMIT_STR(str) CDC_Transmit_FS((uint8_t*)str, strlen(str))
-
-
 #ifdef __cplusplus
 }
 #endif

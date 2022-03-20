@@ -13,17 +13,21 @@ namespace
 {
 constexpr uint8_t COMMON_FLASH_FRAME_LENGTH_POS    = 0;
 constexpr uint8_t COMMON_FLASH_FRAME_TYPE_POS      = 1;
-constexpr uint8_t COMMON_FLASH_FRAME_DATA_SIZE_POS = 2;
-constexpr uint8_t COMMON_FLASH_FRAME_DATA_POS      = 3;
+constexpr uint8_t COMMON_FLASH_FRAME_ADDR_POS      = 2;
+constexpr uint8_t COMMON_FLASH_FRAME_DATA_SIZE_POS = 6;
+constexpr uint8_t COMMON_FLASH_FRAME_CHKSUM_POS    = 7;
+constexpr uint8_t COMMON_FLASH_FRAME_DATA_POS      = 8;
 
 constexpr uint8_t FLASH_FRAME_TYPE          = 0x01;
-constexpr uint8_t FLASH_FRAME_HEADER_SIZE   = 0x03;
+constexpr uint8_t FLASH_FRAME_HEADER_SIZE   = 0x08;
+
+constexpr uint32_t FLASH_INIT_FLASH_ADDRESS= 0x80121056;
 
 } // namespace
 
 TEST(FlashFrameTest, build_and_make_flash_frame_success)
 {
-  constexpr size_t  FLASH_FRAME_SIZE          = 8;
+  constexpr size_t  FLASH_FRAME_SIZE          = 16;
   constexpr uint8_t FLASH_FRAME_DATA_SIZE_MAX = FLASH_FRAME_SIZE - FLASH_FRAME_HEADER_SIZE;
   constexpr uint8_t EXPECTED_PAYLOAD_ADDED    = 4;
   constexpr uint8_t EXPECTED_PAYLOAD_CHECKSUM = 0xe5;
@@ -41,6 +45,7 @@ TEST(FlashFrameTest, build_and_make_flash_frame_success)
  
   auto flash_frame_builder = *flash_frame_builder_opt;
 
+  flash_frame_builder.set_flash_addr(FLASH_INIT_FLASH_ADDRESS);
   EXPECT_FALSE(flash_frame_builder.append_data(FLASH_FRAME_DATA, 0x5));
   EXPECT_TRUE(flash_frame_builder.append_data(FLASH_FRAME_DATA, 0x4));
  
@@ -54,6 +59,7 @@ TEST(FlashFrameTest, build_and_make_flash_frame_success)
   EXPECT_EQ(flash_frame_packet.cbegin(), buffer);
   EXPECT_EQ(flash_frame_packet.end(), buffer + FLASH_FRAME_SIZE);
   EXPECT_EQ(flash_frame_packet.cend(), buffer + FLASH_FRAME_SIZE);
+  EXPECT_EQ(flash_frame_packet.get_addr(), FLASH_INIT_FLASH_ADDRESS);
   ASSERT_EQ(flash_frame_packet.get_lenght(), FLASH_FRAME_SIZE);
   ASSERT_EQ(flash_frame_packet.get_payload_size(), EXPECTED_PAYLOAD_ADDED);
  
@@ -73,6 +79,7 @@ TEST(FlashFrameTest, build_and_make_flash_frame_success)
   {
     EXPECT_EQ(FLASH_FRAME_DATA[i], flash_frame_packet.get_payload()[i]) << FLASH_FRAME_DATA[i];
   }
+
 }
 
 TEST(FlashFrameTest, build_and_make_flash_frame_append_payload_mulitple_times_success)

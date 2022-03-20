@@ -68,6 +68,7 @@ public:
       case packet_type::FRAME:
       case packet_type::RESET:
       case packet_type::RESET_DONE:
+      case packet_type::MSG:
         return static_cast<packet_type>(_packet[common_type_pos]);
       default:
         return std::nullopt;
@@ -85,14 +86,6 @@ class flash_init_builder
 {
 public:
   friend class flash_init;
-
-  void
-  set_flash_addr(const uint32_t addr) noexcept
-  {
-    std::copy_n(reinterpret_cast<const usb_byte_t*>(&addr),
-                flash_init_addr_size,
-                this->_raw_packet.begin() + flash_init_addr_pos);
-  }
 
   static std::optional<flash_init_builder>
   make_flash_init_builder(raw_packet packet)
@@ -133,26 +126,6 @@ public:
   get_lenght() const noexcept
   {
     return static_cast<size_t>(this->cdata()[common_length_pos]);
-  }
-
-  uint32_t
-  get_addr() const noexcept
-  {
-    uint32_t addr =0;
-    std::copy_n(this->cdata() + flash_init_addr_pos,
-                flash_init_addr_size,
-                reinterpret_cast<usb_byte_t*>(&addr));
-    return addr;
-  }
-
-  addr_raw_t
-  get_addr_raw() const noexcept
-  {
-    addr_raw_t addr;
-    std::copy_n(this->cdata() + flash_init_addr_pos,
-                flash_init_addr_size,
-                reinterpret_cast<usb_byte_t*>(&addr));
-    return addr;
   }
 
   size_t
@@ -226,6 +199,15 @@ public:
     return true;
   }
 
+  void
+  set_flash_addr(const uint32_t addr) noexcept
+  {
+    std::copy_n(reinterpret_cast<const usb_byte_t*>(&addr),
+                flash_frame_addr_size,
+                this->_raw_packet.begin() + flash_frame_addr_pos);
+  }
+
+
   static std::optional<flash_frame_builder>
   make_flash_frame_builder(raw_packet packet)
   {
@@ -286,6 +268,26 @@ public:
   get_checksum()
   {
     return static_cast<uint8_t>(this->cdata()[flash_frame_checksum_pos]);
+  }
+
+  uint32_t
+  get_addr() const noexcept
+  {
+    uint32_t addr =0;
+    std::copy_n(this->cdata() + flash_frame_addr_pos,
+                flash_frame_addr_size,
+                reinterpret_cast<usb_byte_t*>(&addr));
+    return addr;
+  }
+
+  addr_raw_t
+  get_addr_raw() const noexcept
+  {
+    addr_raw_t addr;
+    std::copy_n(this->cdata() + flash_frame_addr_pos,
+                flash_frame_addr_size,
+                reinterpret_cast<usb_byte_t*>(&addr));
+    return addr;
   }
 
   size_t
@@ -493,6 +495,121 @@ public:
 
 private:
   explicit flash_reset_done(raw_packet packet) noexcept
+    : raw_packet(packet)
+  {
+  }
+};
+
+class flash_msg_builder
+{
+public:
+  friend class flash_msg;
+
+  bool
+  copy_msg(const uint8_t *data, uint8_t size) noexcept
+  {
+    if(flash_msg_payload_length < size)
+      return false;
+
+    std::copy_n(reinterpret_cast<const usb_byte_t*>(data),
+                size,
+                this->_raw_packet.begin() + flash_msg_payload_pos);
+
+    std::copy_n(reinterpret_cast<const usb_byte_t*>(&size),
+                flash_msg_payload_size_length,
+                this->_raw_packet.begin() + flash_msg_payload_size_pos);
+
+    return true;
+  }
+
+  static std::optional<flash_msg_builder>
+  make_flash_msg_builder(raw_packet packet)
+  {
+    auto packet_buffer_size = static_cast<size_t>(packet.size());
+
+    if (packet_buffer_size < flash_msg_header_length ||  packet_buffer_size > flash_msg_size)
+    {
+      return std::nullopt;
+    }
+
+    packet.data()[common_length_pos] = static_cast<usb_byte_t>( packet_buffer_size );
+    packet.data()[common_type_pos] =
+      usb_byte_t{ static_cast<uint8_t>(packet_type::MSG) };
+
+    return flash_msg_builder(packet);
+  }
+
+private:
+  explicit flash_msg_builder(raw_packet packet) noexcept
+    : _raw_packet(packet)
+  {
+  }
+
+  raw_packet _raw_packet;
+};
+
+class flash_msg
+  : public raw_packet
+{
+public:
+  explicit flash_msg(flash_msg_builder builder)
+    : raw_packet(builder._raw_packet)
+  {
+  }
+
+  size_t
+  get_lenght() const noexcept
+  {
+    return static_cast<size_t>(this->cdata()[common_length_pos]);
+  }
+
+  const usb_byte_t*
+  get_msg() const noexcept
+  {
+    return this->cdata() + flash_msg_payload_pos;
+  }
+
+  uint8_t
+  get_msg_size()
+  {
+    return static_cast<uint8_t>(this->cdata()[flash_msg_payload_size_pos]);
+  }
+
+  size_t
+  size() const
+  {
+    return static_cast<size_t>(this->cdata()[common_length_pos]);
+  }
+
+  usb_byte_t*
+  end() const
+  {
+    uint8_t length = this->get_lenght();
+    return this->cdata() + length;
+  }
+
+  const usb_byte_t*
+  cend() const
+  {
+    uint8_t length = this->get_lenght();
+    return this->cdata() + length;
+  }
+
+  static std::optional<flash_msg>
+  make_flash_msg(raw_packet packet)
+  {
+    auto packet_buffer_size = static_cast<size_t>(packet.size());
+
+    if (packet_buffer_size < flash_msg_header_length ||
+        !packet.get_type().has_value() || packet.get_type() != packet_type::MSG)
+    {
+      return std::nullopt;
+    }
+    return flash_msg(packet);
+  }
+
+private:
+  explicit flash_msg(raw_packet packet) noexcept
     : raw_packet(packet)
   {
   }
