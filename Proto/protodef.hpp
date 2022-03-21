@@ -28,6 +28,7 @@ constexpr int flash_frame_checksum_size   = 0x1;
 constexpr int flash_frame_addr_size       = 0x4;
 constexpr int flash_frame_header_length   = flash_frame_data_size + flash_frame_checksum_size + flash_frame_addr_size + 2;
 constexpr int flash_frame_max_data_length = 256 - flash_frame_header_length;
+static_assert(flash_frame_max_data_length % 4 == 0);
 constexpr int flash_frame_max_length      = 256;
 
 constexpr int flash_frame_addr_pos           = common_type_pos + 1;
