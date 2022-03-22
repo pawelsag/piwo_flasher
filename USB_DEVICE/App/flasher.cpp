@@ -2,18 +2,21 @@ extern "C" {
 #include "flasher.h"
 }
 #include "global.hpp"
+#include <stdarg.h>
 
 #include "proto.hpp"
 
 stm32_config stm_configuration;
 
-template<typename... Args>
-inline void usb_transmit_msg(const char *format, Args... args)
+void usb_transmit_msg(const char *format, ...)
 {
-  uint8_t packet_buf[max_packet_size];
+  uint8_t packet_buf[flash_msg_size];
   uint8_t payload[flash_msg_payload_length];
+  va_list args;
+  va_start(args, format);
+  int written = vsnprintf(reinterpret_cast<char*>(payload), flash_msg_size, format, args);
+  va_end(args);
 
-  int written = snprintf(reinterpret_cast<char*>(payload), max_packet_size, format, args...);
   if(written < 0 || written == max_packet_size)
     return;
 
@@ -25,10 +28,12 @@ inline void usb_transmit_msg(const char *format, Args... args)
 
   auto flash_msg_builder = *flash_msg_builder_opt;
 
-  if(!flash_msg_builder.copy_msg(payload, written))
+  if(!flash_msg_builder.copy_msg(payload, written+1))
     return;
 
-  CDC_Transmit_FS(packet_buf, max_packet_size);
+  flash_msg msg = flash_msg(flash_msg_builder);
+
+  CDC_Transmit_FS(msg.data(), msg.get_msg_size() + flash_msg_header_length);
 };
 
 
@@ -46,7 +51,7 @@ stm32_write(const T* buf, uint32_t count)
   return HAL_UART_Transmit(&huartx, (uint8_t*)buf, sizeof(T)*count, HAL_MAX_DELAY);
 }
 
-int
+bool
 stm32_init()
 {
   uint8_t init_cmd = STM32_CMD_INIT;
@@ -56,32 +61,32 @@ stm32_init()
   if(stm32_write(&init_cmd, 1) != HAL_OK)
   {
       usb_transmit_msg("During stm32 config init write the uart error occured");
-      return -1;
+      return false;
   }
 
   if(stm32_read(&response,1) != HAL_OK)
   {
       usb_transmit_msg("During stm32 config init read the uart error occured");
-      return -1;
+      return false;
   }
 
   if(response != STM32_ACK)
   {
       usb_transmit_msg("Stm32 config error. Waiting for ACK failed %d != %d", STM32_ACK, response);
-      return -1;
+      return false;
   }
 
   if(stm32_write(get_cmd, 2) != HAL_OK)
   {
     usb_transmit_msg("During stm32 config get command uart failed");
-    return -1;
+    return false;
   }
 
   stm32_read(&response, 1);
   if(response != 12)
   {
     usb_transmit_msg("STM cmd length incorrect, 12 != %d", response);
-    return -1;
+    return false;
   }
 
   stm32_read(&stm_configuration.version, 1);
@@ -99,17 +104,17 @@ stm32_init()
 
   if(stm32_read(&response,1) != HAL_OK)
   {
-      return -1;
+      return false;
   }
 
   if(response != STM32_ACK)
   {
     usb_transmit_msg("Reading STM configuation commands failed");
-    return -1;
+    return false;
   }
 
   usb_transmit_msg("STM configuation commands done");
-  return 0;
+  return true;
 }
 
 stm32_config
@@ -118,7 +123,7 @@ get_config()
   return stm_configuration;
 }
 
-int
+bool
 stm32_erase_flash()
 {
   constexpr uint8_t num_of_pages = 0xff;
@@ -132,20 +137,20 @@ stm32_erase_flash()
   stm32_read(&response, 1);
 
   if(response != STM32_ACK)
-    return -1;
+    return false;
 
   stm32_write(er_all, 2);
   stm32_read(&response, 1);
 
   if(response != STM32_ACK)
-    return -1;
+    return false;
 
   usb_transmit_msg("Erasing STM pages done");
 
-  return 0;
+  return true;
 }
 
-int
+bool
 stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, uint8_t chksum)
 {
   const uint8_t cmd[2] = {stm_configuration.wm, (uint8_t)(stm_configuration.wm^0xff)};
@@ -159,7 +164,7 @@ stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, ui
   if(response != STM32_ACK)
   {
     usb_transmit_msg("Sending payload command failed. ACK not received");
-    return -1;
+    return false;
   }
 
   // send addr
@@ -171,7 +176,7 @@ stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, ui
   if(response != STM32_ACK)
   {
     usb_transmit_msg("Sending payload address failed. ACK not received");
-    return -1;
+    return false;
   }
 
   // send payload size
@@ -185,10 +190,10 @@ stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, ui
   if(response != STM32_ACK)
   {
     usb_transmit_msg("Sending payload failed. ACK not received");
-    return -1;
+    return false;
   }
 
-  return 0;
+  return true;
 }
 
 
@@ -219,19 +224,22 @@ handle_command(uint8_t *data, uint32_t size)
 {
   raw_packet packet(data, size);
 
-  auto packet_opt = packet.get_type();
+  auto packet_type_opt = packet.get_type();
 
-  if(!packet_opt.has_value())
+  if(!packet_type_opt.has_value())
   {
       usb_transmit_msg("Incorrect frame type received");
       return;
   }
 
-  switch(packet_opt.value())
+  usb_transmit_msg("Handle command %d with size %d %d", (uint8_t)packet_type_opt.value(), data[0], size);
+
+  switch(packet_type_opt.value())
   {
       case packet_type::INIT:
         {
           auto flash_init_opt = flash_init::make_flash_init(packet);
+          usb_transmit_msg("Handle init packet");
           if(!flash_init_opt.has_value())
           {
             usb_transmit_msg("Received init packet incorrect");
@@ -241,8 +249,10 @@ handle_command(uint8_t *data, uint32_t size)
           auto flash_init = flash_init_opt.value();
 
           init_transfer();
-          stm32_init();
-          stm32_erase_flash();
+          if(!stm32_init())
+            return;
+          if(!stm32_erase_flash())
+            return;
         }
         break;
       case packet_type::FRAME:
@@ -264,7 +274,7 @@ handle_command(uint8_t *data, uint32_t size)
         break;
       case packet_type::RESET:
         {
-          auto flash_init_opt = flash_init::make_flash_init(packet);
+          auto flash_init_opt = flash_reset::make_flash_reset(packet);
           if(!flash_init_opt.has_value())
           {
             usb_transmit_msg("Received reset packet incorrect");
@@ -287,6 +297,7 @@ handle_command(uint8_t *data, uint32_t size)
         }
         break;
       default:
+            usb_transmit_msg("Handler failed");
         break;
   }
 

@@ -19,6 +19,12 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "usb_device.h"
+#include "usbd_cdc_if.h"
+#include "flasher.h"
+
+int usb_event_rx = 0;
+
+struct usb_data usb_rx;
 
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
@@ -32,7 +38,12 @@ int main(void)
   MX_USB_DEVICE_Init();
   while (1)
   {
-
+      if(usb_event_rx)
+      {
+        handle_command(usb_rx.buf, usb_rx.len);
+        usb_event_rx = 0;
+      }
+      HAL_Delay(5);
   }
 }
 

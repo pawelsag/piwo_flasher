@@ -93,9 +93,9 @@ extern "C" {
 typedef struct
 {
   uint32_t bitrate;
-  uint8_t  format;
-  uint8_t  paritytype;
-  uint8_t  datatype;
+  uint32_t  format;
+  uint32_t  paritytype;
+  uint32_t  datatype;
 } USBD_CDC_LineCodingTypeDef;
 
 typedef struct _USBD_CDC_Itf

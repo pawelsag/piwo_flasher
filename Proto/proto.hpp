@@ -515,9 +515,7 @@ public:
                 size,
                 this->_raw_packet.begin() + flash_msg_payload_pos);
 
-    std::copy_n(reinterpret_cast<const usb_byte_t*>(&size),
-                flash_msg_payload_size_length,
-                this->_raw_packet.begin() + flash_msg_payload_size_pos);
+    this->_raw_packet.data()[flash_msg_payload_size_pos] = usb_byte_t{size};
 
     return true;
   }

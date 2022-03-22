@@ -1,3 +1,4 @@
+#include "protodef.hpp"
 #include <stdio.h>
 #include "proto.hpp"
 #include <fcntl.h>
@@ -27,13 +28,49 @@ write_all(int fd, uint8_t *buf, size_t size)
   return true;
 }
 
+void
+read_some(int fd, uint8_t *buf, int to_read)
+{
+  int cnt = 0;
+  while(cnt < to_read)
+    if(read(fd, buf+cnt, 1) > 0 || finish)
+      cnt++;
+}
+
 void receive_msg(int device)
 {
-  uint8_t buf[flash_msg_size];
+  uint8_t buf[max_packet_size];
+  int bytes_to_rcv=0;
+  raw_packet packet(buf, flash_msg_size);
+  
   while(!finish)
   {
-    read(device, buf, 1);
-    printf("%c", buf[0]);
+    // read proto header
+    read_some(device, buf, 2);
+
+    switch(buf[common_type_pos])
+    {
+      case (uint8_t)packet_type::RESET_DONE:
+        finish = true;
+        printf("Reset done received. Flashing done\n");
+        return;
+
+      case (uint8_t)packet_type::MSG:
+      {
+        read_some(device, buf + flash_msg_payload_size_pos, 1);
+        read_some(device, buf + flash_msg_payload_pos, buf[flash_msg_payload_size_pos]);
+        auto flash_msg_packet_opt = flash_msg::make_flash_msg(packet);
+        if(!flash_msg_packet_opt.has_value())
+          return;
+
+        auto flash_msg_packet = flash_msg_packet_opt.value();
+        printf("%s\n", flash_msg_packet.get_msg());
+      }
+      break;
+      default:
+        printf("Incorrect frame %d %d\n", buf[0], buf[1]);
+        continue;
+    }
   }
 }
 
@@ -182,6 +219,7 @@ int main(int argc, char* argv[])
     printf("Can't open device.\n");
     return -2;
   }
+  std::thread recevier(receive_msg, device);
 
   if(!set_device_params(device))
   {
@@ -196,11 +234,11 @@ int main(int argc, char* argv[])
     return -2;
   }
 
-  std::thread recevier(receive_msg, device);
 
   stat(argv[2], &st);
   file_size = st.st_size;
-  printf("Flashing binary %s od size %d \n", argv[2], file_size);
+  printf("Flashing binary %s of size %d \n", argv[2], file_size);
+
   // init packet
   if(!send_init_packet(device))
   {
@@ -208,58 +246,64 @@ int main(int argc, char* argv[])
     return -1;
   }
 
-  next_read = flash_frame_max_data_length; 
-  while(total_bytes_read < file_size)
+  //next_read = flash_frame_max_data_length; 
+  //while(total_bytes_read < file_size)
+  //{
+  //  bytes_read = read(binary, file_buf + to_send, next_read);
+  //  to_send += bytes_read;
+
+  //  if(bytes_read == 0)
+  //  {
+  //    // we can get here only when the payload size is not alligned to 4
+  //    if(to_send != 0)
+  //    {
+  //      while(to_send & 0x11){
+  //        file_buf[to_send] = 0x0;
+  //        to_send++;
+  //      }
+  //      if(!send_frame_with_correct_endian(device, flash_address, file_buf, to_send))
+  //      {
+  //        printf("Sending frame packet failed");
+  //        return -4;
+  //      }
+  //    }
+
+  //    printf("Bytes %d flashed\n", file_size);
+  //    send_reset_packet(device);
+  //    break;
+  //  }
+
+  //  if(bytes_read < 0)
+  //  {
+  //    printf("Data read general error %d\n", errno);
+  //    send_reset_packet(device);
+  //    break;
+  //  }
+
+  // flash_address = start_flash_addr + total_bytes_read;
+  // total_bytes_read += bytes_read;
+
+  //  if(bytes_read & 0x11) {
+  //    next_read = next_read - bytes_read;
+  //    continue;
+  //  }
+  //  else
+  //    next_read = flash_frame_max_data_length;
+
+  // if(send_frame_with_correct_endian(device, flash_address, file_buf, to_send))
+  // {
+  //   printf("Sending frame packet failed");
+  //   return  -4;
+  // }
+  // to_send = 0;
+  //}
+  int end = 0;
+  while(!end)
   {
-    bytes_read = read(binary, file_buf + to_send, next_read);
-    to_send += bytes_read;
-
-    if(bytes_read == 0)
-    {
-      // we can get here only when the payload size is not alligned to 4
-      if(to_send != 0)
-      {
-        while(to_send & 0x11){
-          file_buf[to_send] = 0x0;
-          to_send++;
-        }
-        if(!send_frame_with_correct_endian(device, flash_address, file_buf, to_send))
-        {
-          printf("Sending frame packet failed");
-          return -4;
-        }
-      }
-
-      printf("Bytes %d flashed\n", file_size);
-      send_reset_packet(device);
-      break;
-    }
-
-    if(bytes_read < 0)
-    {
-      printf("Data read general error %d\n", errno);
-      send_reset_packet(device);
-      break;
-    }
-
-   flash_address = start_flash_addr + total_bytes_read;
-   total_bytes_read += bytes_read;
-
-    if(bytes_read & 0x11) {
-      next_read = next_read - bytes_read;
-      continue;
-    }
-    else
-      next_read = flash_frame_max_data_length;
-
-   if(send_frame_with_correct_endian(device, flash_address, file_buf, to_send))
-   {
-     printf("Sending frame packet failed");
-     return  -4;
-   }
-   to_send = 0;
+    scanf("%d", &end);
   }
 
   finish = true;
   recevier.join();
+  close(device);
 }

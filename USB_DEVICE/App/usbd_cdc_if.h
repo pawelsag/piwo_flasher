@@ -35,6 +35,8 @@ extern UART_HandleTypeDef huartx;
 
 uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
 
+void usb_transmit_msg(const char *format, ...);
+
 #ifdef __cplusplus
 }
 #endif

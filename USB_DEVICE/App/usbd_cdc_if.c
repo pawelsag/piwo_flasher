@@ -182,16 +182,12 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
         .paritytype = cdc_parity_to_hal_parity(pbuf[5]),
         .datatype = cdc_wordwidth_to_hal_wordwidth(pbuf[6]) 
       };
-      char buf [80];
 
       if(HAL_UART_DeInit(&huartx) != HAL_OK)
       {
         Error_Handler();
       }
       uart_init(&uart_line_config);
-
-      sprintf(buf, "Uart speed set to %u \n", uart_line_config.bitrate); 
-      CDC_Transmit_FS(buf, strlen(buf));
     }
     break;
 
@@ -204,9 +200,6 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
     pbuf[5] = huartx.Init.Parity;
     pbuf[6] = huartx.Init.WordLength;
     break;
-    char arr [80];
-    sprintf(arr, "Conf get speed %u \n", huartx.Init.BaudRate); 
-    HAL_UART_Transmit(&huartx, (uint8_t*)arr, strlen(arr), HAL_MAX_DELAY);
 
     case CDC_SET_CONTROL_LINE_STATE:
 
@@ -242,9 +235,15 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
-  handle_command(Buf, *Len);
+  if(usb_event_rx == 1)
+    return USBD_BUSY;
+  memcpy(usb_rx.buf, Buf, *Len);
+  usb_rx.len = *Len;
+  usb_event_rx = 1;
+
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
+
   return (USBD_OK);
   /* USER CODE END 6 */
 }

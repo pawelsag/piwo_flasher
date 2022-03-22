@@ -31,7 +31,7 @@ constexpr int flash_frame_max_data_length = 256 - flash_frame_header_length;
 static_assert(flash_frame_max_data_length % 4 == 0);
 constexpr int flash_frame_max_length      = 256;
 
-constexpr int flash_frame_addr_pos           = common_type_pos + 1;
+constexpr int flash_frame_addr_pos          = common_type_pos + 1;
 constexpr int flash_frame_payload_size_pos  = common_type_pos + 5;
 constexpr int flash_frame_checksum_pos      = common_type_pos + 6;
 constexpr int flash_frame_payload_pos       = common_type_pos + 7;
@@ -46,7 +46,7 @@ constexpr int flash_msg_payload_size_length = 1;
 constexpr int flash_msg_payload_length = 253;
 constexpr int flash_msg_payload_size_pos = common_type_pos + 1;
 constexpr int flash_msg_payload_pos      = common_type_pos + 2;
-constexpr int flash_msg_header_length   = flash_msg_payload_size_length + 2;
+constexpr int flash_msg_header_length    = flash_msg_payload_size_length + 2;
 
 constexpr int max_packet_size = std::max({ flash_init_length,
                                            flash_frame_max_length,
