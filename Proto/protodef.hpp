@@ -12,8 +12,15 @@ enum class packet_type : uint8_t
   INIT,
   FRAME,
   RESET, // also send when flashing is done
-  RESET_DONE,
+  RESPONSE,
   MSG
+};
+
+enum class flash_response_type : uint8_t
+{
+  ACK=0x65,
+  NACK,
+  NONE
 };
 
 constexpr int common_length_pos = 0x0;
@@ -21,6 +28,7 @@ constexpr int common_type_pos   = 0x1;
 
 // flash init
 constexpr int flash_init_length = 2;
+
 // flash frame
 // payload size must devide by 4
 constexpr int flash_frame_data_size       = 0x1;
@@ -38,10 +46,15 @@ constexpr int flash_frame_payload_pos       = common_type_pos + 7;
 
 // flash reset request
 constexpr int flash_reset_length = 2;
+
 // flash reset response
-constexpr int flash_reset_done_length = 2;
+constexpr int flash_response_length = 3;
+constexpr int flash_response_type_length = 1;
+
+constexpr int flash_response_type_pos = common_type_pos + 1;
+
 // flash msg
-constexpr int flash_msg_size = 256;
+constexpr int flash_msg_length = 256;
 constexpr int flash_msg_payload_size_length = 1;
 constexpr int flash_msg_payload_length = 253;
 constexpr int flash_msg_payload_size_pos = common_type_pos + 1;
@@ -50,6 +63,6 @@ constexpr int flash_msg_header_length    = flash_msg_payload_size_length + 2;
 
 constexpr int max_packet_size = std::max({ flash_init_length,
                                            flash_frame_max_length,
-                                           flash_msg_size,
+                                           flash_msg_length,
                                            flash_reset_length,
-                                           flash_reset_done_length});
+                                           flash_response_length});

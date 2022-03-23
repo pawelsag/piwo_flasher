@@ -67,7 +67,7 @@ public:
       case packet_type::INIT:
       case packet_type::FRAME:
       case packet_type::RESET:
-      case packet_type::RESET_DONE:
+      case packet_type::RESPONSE:
       case packet_type::MSG:
         return static_cast<packet_type>(_packet[common_type_pos]);
       default:
@@ -415,30 +415,37 @@ private:
   }
 };
 
-class flash_reset_done_builder
+class flash_response_builder
 {
 public:
-  friend class flash_reset_done;
+  friend class flash_response;
 
-  static std::optional<flash_reset_done_builder>
-  make_flash_reset_done_builder(raw_packet packet)
+  static std::optional<flash_response_builder>
+  make_flash_response_builder(raw_packet packet)
   {
     auto packet_buffer_size = static_cast<size_t>(packet.size());
 
-    if (packet_buffer_size < flash_reset_done_length)
+    if (packet_buffer_size < flash_response_length)
     {
       return std::nullopt;
     }
 
-    packet.data()[common_length_pos] = usb_byte_t{ flash_reset_done_length };
+    packet.data()[common_length_pos] = usb_byte_t{ flash_response_length };
     packet.data()[common_type_pos] =
-      usb_byte_t{ static_cast<uint8_t>(packet_type::RESET_DONE) };
+      usb_byte_t{ static_cast<uint8_t>(packet_type::RESPONSE) };
 
-    return flash_reset_done_builder(packet);
+    return flash_response_builder(packet);
+  }
+
+  void
+  set_response(const flash_response_type response) noexcept
+  {
+    this->_raw_packet.data()[flash_response_type_pos] =
+      usb_byte_t{ static_cast<uint8_t>(response) };
   }
 
 private:
-  explicit flash_reset_done_builder(raw_packet packet) noexcept
+  explicit flash_response_builder(raw_packet packet) noexcept
     : _raw_packet(packet)
   {
   }
@@ -446,11 +453,11 @@ private:
   raw_packet _raw_packet;
 };
 
-class flash_reset_done
+class flash_response
   : public raw_packet
 {
 public:
-  explicit flash_reset_done(flash_reset_done_builder builder)
+  explicit flash_response(flash_response_builder builder)
     : raw_packet(builder._raw_packet)
   {
   }
@@ -464,37 +471,43 @@ public:
   size_t
   size() const
   {
-    return flash_reset_done_length;
+    return flash_response_length;
   }
 
   usb_byte_t*
   end() const
   {
-    return this->cdata() + flash_reset_done_length;
+    return this->cdata() + flash_response_length;
   }
 
   const usb_byte_t*
   cend() const
   {
-    return this->cdata() + flash_reset_done_length;
+    return this->cdata() + flash_response_length;
   }
 
-  static std::optional<flash_reset_done>
-  make_flash_reset_done(raw_packet packet)
+  flash_response_type
+  get_response() noexcept
+  {
+    return static_cast<flash_response_type>(this->data()[flash_response_type_pos]);
+  }
+
+  static std::optional<flash_response>
+  make_flash_response(raw_packet packet)
   {
     auto packet_buffer_size = static_cast<size_t>(packet.size());
 
-    if (packet_buffer_size < flash_reset_done_length ||
-        static_cast<uint8_t>(packet.cdata()[common_length_pos]) != flash_reset_done_length ||
-        !packet.get_type().has_value() || packet.get_type() != packet_type::RESET_DONE)
+    if (packet_buffer_size < flash_response_length ||
+        static_cast<uint8_t>(packet.cdata()[common_length_pos]) != flash_response_length ||
+        !packet.get_type().has_value() || packet.get_type() != packet_type::RESPONSE)
     {
       return std::nullopt;
     }
-    return flash_reset_done(packet);
+    return flash_response(packet);
   }
 
 private:
-  explicit flash_reset_done(raw_packet packet) noexcept
+  explicit flash_response(raw_packet packet) noexcept
     : raw_packet(packet)
   {
   }
@@ -525,7 +538,7 @@ public:
   {
     auto packet_buffer_size = static_cast<size_t>(packet.size());
 
-    if (packet_buffer_size < flash_msg_header_length ||  packet_buffer_size > flash_msg_size)
+    if (packet_buffer_size < flash_msg_header_length ||  packet_buffer_size > flash_msg_length)
     {
       return std::nullopt;
     }

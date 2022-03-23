@@ -7,11 +7,21 @@
 #include <thread>
 #include <termios.h>
 #include <string.h>
+#include <atomic>
+#include <condition_variable>
+#include <chrono>
+
+using namespace std::chrono_literals;
 
 const char * usage = "./flash_stm  /path/to/device /path/to/flash/binary\n";
 constexpr uint32_t start_flash_addr = 0x80000000;
 constexpr size_t buffer_size = 256;
-int device, binary;
+
+std::condition_variable cv_response;
+std::mutex mtx_response;
+
+flash_response_type response = flash_response_type::NONE;
+
 bool finish = false;
 
 bool
@@ -41,7 +51,7 @@ void receive_msg(int device)
 {
   uint8_t buf[max_packet_size];
   int bytes_to_rcv=0;
-  raw_packet packet(buf, flash_msg_size);
+  raw_packet packet(buf, max_packet_size);
   
   while(!finish)
   {
@@ -50,10 +60,20 @@ void receive_msg(int device)
 
     switch(buf[common_type_pos])
     {
-      case (uint8_t)packet_type::RESET_DONE:
-        finish = true;
-        printf("Reset done received. Flashing done\n");
-        return;
+      case (uint8_t)packet_type::RESPONSE:
+        {
+         std::unique_lock<std::mutex> lk(mtx_response);
+         read_some(device, buf + flash_response_type_pos, 1);
+         auto flash_response_packet_opt = flash_response::make_flash_response(packet);
+         if(!flash_response_packet_opt.has_value())
+           return;
+
+         auto flash_response_packet = flash_response_packet_opt.value();
+         response = flash_response_packet.get_response();
+         cv_response.notify_all();
+         printf("[STM32 RESPONSE] %s \n", flash_response_packet.get_response() == flash_response_type::ACK ? "ACK" : "NACK");
+        }
+        break;
 
       case (uint8_t)packet_type::MSG:
       {
@@ -64,7 +84,7 @@ void receive_msg(int device)
           return;
 
         auto flash_msg_packet = flash_msg_packet_opt.value();
-        printf("%s\n", flash_msg_packet.get_msg());
+        printf("[STM32 MSG] %s\n", flash_msg_packet.get_msg());
       }
       break;
       default:
@@ -72,6 +92,21 @@ void receive_msg(int device)
         continue;
     }
   }
+}
+// There are two possible responses
+// ACK when the transation was performed correctly
+// NACK when transaction failed
+//
+// return true when we receive ACK
+// otherwise return NACK
+bool
+wait_for_response()
+{
+  std::unique_lock<std::mutex> lk(mtx_response);
+  if(!cv_response.wait_for(lk, 10000ms, []{return response != flash_response_type::NONE;})) 
+    return false;
+
+  return response == flash_response_type::ACK;
 }
 
 static bool
@@ -200,6 +235,7 @@ int main(int argc, char* argv[])
   uint32_t flash_address = start_flash_addr;
 #endif
 
+  int device, binary;
   uint8_t packet_buf[max_packet_size];
   uint8_t file_buf[flash_frame_max_data_length];
   raw_packet packet(packet_buf, buffer_size);
@@ -219,7 +255,7 @@ int main(int argc, char* argv[])
     printf("Can't open device.\n");
     return -2;
   }
-  std::thread recevier(receive_msg, device);
+  std::thread(receive_msg, device).detach();
 
   if(!set_device_params(device))
   {
@@ -242,68 +278,108 @@ int main(int argc, char* argv[])
   // init packet
   if(!send_init_packet(device))
   {
-    printf("Sending init packet fail\n");
+    printf("[FLASHER] Sending init packet fail\n");
+    finish = true;
     return -1;
   }
 
-  //next_read = flash_frame_max_data_length; 
-  //while(total_bytes_read < file_size)
-  //{
-  //  bytes_read = read(binary, file_buf + to_send, next_read);
-  //  to_send += bytes_read;
-
-  //  if(bytes_read == 0)
-  //  {
-  //    // we can get here only when the payload size is not alligned to 4
-  //    if(to_send != 0)
-  //    {
-  //      while(to_send & 0x11){
-  //        file_buf[to_send] = 0x0;
-  //        to_send++;
-  //      }
-  //      if(!send_frame_with_correct_endian(device, flash_address, file_buf, to_send))
-  //      {
-  //        printf("Sending frame packet failed");
-  //        return -4;
-  //      }
-  //    }
-
-  //    printf("Bytes %d flashed\n", file_size);
-  //    send_reset_packet(device);
-  //    break;
-  //  }
-
-  //  if(bytes_read < 0)
-  //  {
-  //    printf("Data read general error %d\n", errno);
-  //    send_reset_packet(device);
-  //    break;
-  //  }
-
-  // flash_address = start_flash_addr + total_bytes_read;
-  // total_bytes_read += bytes_read;
-
-  //  if(bytes_read & 0x11) {
-  //    next_read = next_read - bytes_read;
-  //    continue;
-  //  }
-  //  else
-  //    next_read = flash_frame_max_data_length;
-
-  // if(send_frame_with_correct_endian(device, flash_address, file_buf, to_send))
-  // {
-  //   printf("Sending frame packet failed");
-  //   return  -4;
-  // }
-  // to_send = 0;
-  //}
-  int end = 0;
-  while(!end)
+  if(!wait_for_response())
   {
-    scanf("%d", &end);
+    printf("[FLASHER] Waiting for init response failed\n");
+    finish = true;
+    return -1;
+  }
+
+  next_read = flash_frame_max_data_length; 
+  while(total_bytes_read < file_size)
+  {
+    bytes_read = read(binary, file_buf + to_send, next_read);
+    to_send += bytes_read;
+
+    if(bytes_read == 0)
+    {
+      // we can get here only when the payload size is not alligned to 4
+      if(to_send != 0)
+      {
+        while(to_send & 0x11){
+          file_buf[to_send] = 0x0;
+          to_send++;
+        }
+        if(!send_frame_with_correct_endian(device, flash_address, file_buf, to_send))
+        {
+          printf("[FLASHER] Sending frame packet failed");
+          finish = true;
+          return -4;
+        }
+
+        if(!wait_for_response())
+        {
+          printf("[FLASHER] Waiting for frame packet response failed\n");
+          finish = true;
+          return -1;
+        }
+      }
+
+      printf("[FLASHER] Bytes %lu flashed\n", file_size);
+
+      if(!send_reset_packet(device))
+      {
+        printf("[FLASHER] Sending reset packet failed");
+        finish = true;
+        return -4;
+      }
+      if(!wait_for_response())
+      {
+        printf("[FLASHER] Waiting for reset packet response failed\n");
+        finish = true;
+        return -1;
+      }
+
+      break;
+    }
+
+    if(bytes_read < 0)
+    {
+      printf("[FLASHER] Data read general error %d\n", errno);
+      if(!send_reset_packet(device))
+      {
+        printf("[FLASHER] Sending reset packet failed");
+        finish = true;
+        return -4;
+      }
+      if(!wait_for_response())
+      {
+        printf("[FLASHER] Waiting for reset packet response failed\n");
+        finish = true;
+        return -1;
+      }
+      break;
+    }
+
+   flash_address = start_flash_addr + total_bytes_read;
+   total_bytes_read += bytes_read;
+
+    if(bytes_read & 0x11) {
+      next_read = next_read - bytes_read;
+      continue;
+    }
+    else
+      next_read = flash_frame_max_data_length;
+
+   if(send_frame_with_correct_endian(device, flash_address, file_buf, to_send))
+   {
+     printf("Sending frame packet failed");
+     return  -4;
+   }
+   if(!wait_for_response())
+   {
+     printf("[FLASHER] Waiting for frame packet response failed\n");
+     finish = true;
+     return -1;
+   }
+   to_send = 0;
   }
 
   finish = true;
-  recevier.join();
   close(device);
 }

@@ -5,16 +5,19 @@ extern "C" {
 #include <stdarg.h>
 
 #include "proto.hpp"
-
+constexpr int uart_timeout_ms = 1000;
 stm32_config stm_configuration;
 
 void usb_transmit_msg(const char *format, ...)
 {
-  uint8_t packet_buf[flash_msg_size];
+  const int attemps = 10;
+  int attempt = 0;
+
+  uint8_t packet_buf[flash_msg_length];
   uint8_t payload[flash_msg_payload_length];
   va_list args;
   va_start(args, format);
-  int written = vsnprintf(reinterpret_cast<char*>(payload), flash_msg_size, format, args);
+  int written = vsnprintf(reinterpret_cast<char*>(payload), flash_msg_length, format, args);
   va_end(args);
 
   if(written < 0 || written == max_packet_size)
@@ -24,7 +27,7 @@ void usb_transmit_msg(const char *format, ...)
 
   auto flash_msg_builder_opt = flash_msg_builder::make_flash_msg_builder(packet);
   if(!flash_msg_builder_opt.has_value())
-    return;
+    return; // this should never heppen
 
   auto flash_msg_builder = *flash_msg_builder_opt;
 
@@ -33,22 +36,53 @@ void usb_transmit_msg(const char *format, ...)
 
   flash_msg msg = flash_msg(flash_msg_builder);
 
-  CDC_Transmit_FS(msg.data(), msg.get_msg_size() + flash_msg_header_length);
+  while(CDC_Transmit_FS(msg.data(), msg.get_msg_size() + flash_msg_header_length) != USBD_OK && attempt < attemps)
+  {
+    HAL_Delay(50);
+    attempt++;
+  }
 };
 
+void
+usb_transmit_cmd_response(flash_response_type response)
+{
+  const int attemps = 10;
+  int attempt = 0;
+
+  uint8_t packet_buf[flash_response_length];
+  raw_packet raw_packet(packet_buf, flash_response_length);
+
+  auto flash_response_builder_opt = flash_response_builder::make_flash_response_builder(raw_packet);
+  if(!flash_response_builder_opt.has_value())
+  {
+    usb_transmit_msg("Sending response failed");
+    return; // this should never heppen
+  }
+
+  auto flash_response_builder = *flash_response_builder_opt;
+  flash_response_builder.set_response(response);
+
+  flash_response response_packet(flash_response_builder);
+
+  while(CDC_Transmit_FS(response_packet.data(), response_packet.size()) != USBD_OK && attempt < attemps)
+  {
+    HAL_Delay(50);
+    attempt++;
+  }
+}
 
 template<typename T>
 int
 stm32_read(T* buf, uint32_t count)
 {
-  return HAL_UART_Receive(&huartx, (uint8_t*)buf, sizeof(T)*count, HAL_MAX_DELAY);
+  return HAL_UART_Receive(&huartx, (uint8_t*)buf, sizeof(T)*count, uart_timeout_ms);
 }
 
 template<typename T>
 int
 stm32_write(const T* buf, uint32_t count)
 {
-  return HAL_UART_Transmit(&huartx, (uint8_t*)buf, sizeof(T)*count, HAL_MAX_DELAY);
+  return HAL_UART_Transmit(&huartx, (uint8_t*)buf, sizeof(T)*count, uart_timeout_ms);
 }
 
 bool
@@ -229,6 +263,7 @@ handle_command(uint8_t *data, uint32_t size)
   if(!packet_type_opt.has_value())
   {
       usb_transmit_msg("Incorrect frame type received");
+      usb_transmit_cmd_response(flash_response_type::NACK);
       return;
   }
 
@@ -243,16 +278,27 @@ handle_command(uint8_t *data, uint32_t size)
           if(!flash_init_opt.has_value())
           {
             usb_transmit_msg("Received init packet incorrect");
+            usb_transmit_cmd_response(flash_response_type::NACK);
             return;
           }
 
           auto flash_init = flash_init_opt.value();
-
           init_transfer();
+
           if(!stm32_init())
+          {
+            usb_transmit_msg("Init cmd failed");
+            usb_transmit_cmd_response(flash_response_type::NACK);
             return;
+          }
+
           if(!stm32_erase_flash())
+          {
+            usb_transmit_msg("Erase cmd failed");
+            usb_transmit_cmd_response(flash_response_type::NACK);
             return;
+          }
+          usb_transmit_cmd_response(flash_response_type::ACK);
         }
         break;
       case packet_type::FRAME:
@@ -261,15 +307,21 @@ handle_command(uint8_t *data, uint32_t size)
           if(!flash_frame_opt.has_value())
           {
             usb_transmit_msg("Received frame packet incorrect");
+            usb_transmit_cmd_response(flash_response_type::NACK);
             return;
           }
           auto flash_frame = flash_frame_opt.value();
           auto flash_address = flash_frame.get_addr_raw();
-          stm32_send_data(flash_address,
+          if(!stm32_send_data(flash_address,
                           flash_frame.get_payload(),
                           flash_frame.get_payload_size(),
-                          flash_frame.get_checksum());
+                          flash_frame.get_checksum()))
+          {
+            usb_transmit_cmd_response(flash_response_type::NACK);
+            return;
+          }
 
+          usb_transmit_cmd_response(flash_response_type::ACK);
         }
         break;
       case packet_type::RESET:
@@ -278,27 +330,16 @@ handle_command(uint8_t *data, uint32_t size)
           if(!flash_init_opt.has_value())
           {
             usb_transmit_msg("Received reset packet incorrect");
+            usb_transmit_cmd_response(flash_response_type::NACK);
             return;
           }
+
           reset_transfer();
-
-          uint8_t reset_done_buf[flash_reset_done_length];
-          raw_packet raw_packet(reset_done_buf, flash_reset_done_length);
-
-          auto flash_reset_done_builder_opt = flash_reset_done_builder::make_flash_reset_done_builder(raw_packet);
-          if(!flash_reset_done_builder_opt.has_value())
-          {
-           usb_transmit_msg("Packet reset done creation failed");
-           return;
-          }
-          auto flash_reset_done_builder = *flash_reset_done_builder_opt;
-          flash_reset_done flash_reset_done_packet(flash_reset_done_builder);
-          CDC_Transmit_FS(flash_reset_done_packet.data(), flash_reset_done_packet.size());
+          usb_transmit_cmd_response(flash_response_type::ACK);
         }
         break;
       default:
             usb_transmit_msg("Handler failed");
         break;
   }
-
 }
