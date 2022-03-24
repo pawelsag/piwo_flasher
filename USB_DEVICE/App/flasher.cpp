@@ -71,26 +71,26 @@ usb_transmit_cmd_response(flash_response_type response)
   }
 }
 
-template<typename T>
 int
-stm32_read(T* buf, uint32_t count)
+stm32_read(uint8_t* buf, uint32_t count)
 {
-  return HAL_UART_Receive(&huartx, (uint8_t*)buf, sizeof(T)*count, uart_timeout_ms);
+  return HAL_UART_Receive(&huartx, (uint8_t*)buf, count, uart_timeout_ms);
 }
 
-template<typename T>
 int
-stm32_write(const T* buf, uint32_t count)
+stm32_write(const uint8_t* buf, uint32_t count)
 {
-  return HAL_UART_Transmit(&huartx, (uint8_t*)buf, sizeof(T)*count, uart_timeout_ms);
+  return HAL_UART_Transmit(&huartx, (uint8_t*)buf, count, uart_timeout_ms);
 }
 
 bool
 stm32_init()
 {
+  constexpr int cmds_res_size = 12;
+  uint8_t commands[cmds_res_size];
   uint8_t init_cmd = STM32_CMD_INIT;
   uint8_t get_cmd[2] = {STM32_CMD_GET, STM32_CMD_GET^0xff};
-  char response;
+  uint8_t response=0x0;
 
   if(stm32_write(&init_cmd, 1) != HAL_OK)
   {
@@ -98,7 +98,7 @@ stm32_init()
       return false;
   }
 
-  if(stm32_read(&response,1) != HAL_OK)
+  if(stm32_read(&response, 1) != HAL_OK)
   {
       usb_transmit_msg("During stm32 config init read the uart error occured");
       return false;
@@ -109,6 +109,7 @@ stm32_init()
       usb_transmit_msg("Stm32 config error. Waiting for ACK failed %d != %d", STM32_ACK, response);
       return false;
   }
+  response = 0x0;
 
   if(stm32_write(get_cmd, 2) != HAL_OK)
   {
@@ -116,27 +117,47 @@ stm32_init()
     return false;
   }
 
+  if(stm32_read(&response, 1) != HAL_OK)
+  {
+      usb_transmit_msg("During stm32 config init read the uart error occured");
+      return false;
+  }
+
+  if(response != STM32_ACK)
+  {
+      usb_transmit_msg("Stm32 config error. Waiting for ACK failed %d != %d", STM32_ACK, response);
+      return false;
+  }
+  response = 0x0;
+
   stm32_read(&response, 1);
-  if(response != 12)
+  if(response != cmds_res_size)
   {
     usb_transmit_msg("STM cmd length incorrect, 12 != %d", response);
     return false;
   }
 
-  stm32_read(&stm_configuration.version, 1);
-  stm32_read(&stm_configuration.get, 1);
-  stm32_read(&stm_configuration.gvr, 1);
-  stm32_read(&stm_configuration.gid, 1);
-  stm32_read(&stm_configuration.rm, 1);
-  stm32_read(&stm_configuration.go, 1);
-  stm32_read(&stm_configuration.wm, 1);
-  stm32_read(&stm_configuration.er, 1);
-  stm32_read(&stm_configuration.wp, 1);
-  stm32_read(&stm_configuration.uw, 1);
-  stm32_read(&stm_configuration.rp, 1);
-  stm32_read(&stm_configuration.ur, 1);
+  stm32_read(commands, cmds_res_size);
 
-  if(stm32_read(&response,1) != HAL_OK)
+  stm_configuration.version = commands[0];
+  stm_configuration.get     = commands[1];
+  stm_configuration.gvr     = commands[2];
+  stm_configuration.gid     = commands[3];
+  stm_configuration.rm      = commands[4];
+  stm_configuration.go      = commands[5];
+  stm_configuration.wm      = commands[6];
+  stm_configuration.er      = commands[7];
+  stm_configuration.wp      = commands[8];
+  stm_configuration.uw      = commands[9];
+  stm_configuration.rp      = commands[10];
+  stm_configuration.ur      = commands[11];
+
+  if(stm_configuration.version == 0x33)
+  {
+    stm32_read(&stm_configuration.ch, 1);
+  }
+
+  if(stm32_read(&response, 1) != HAL_OK)
   {
       return false;
   }
@@ -163,7 +184,7 @@ stm32_erase_flash()
   constexpr uint8_t num_of_pages = 0xff;
   const uint8_t er_cmd[2] = {stm_configuration.er, (uint8_t)(stm_configuration.er^0xff)};
   const uint8_t er_all[2] = {num_of_pages, 0x00};
-  uint8_t response;
+  uint8_t response=0x0;
 
   usb_transmit_msg("Erasing STM pages");
 
@@ -172,6 +193,7 @@ stm32_erase_flash()
 
   if(response != STM32_ACK)
     return false;
+  response = 0x0;
 
   stm32_write(er_all, 2);
   stm32_read(&response, 1);
@@ -189,7 +211,7 @@ stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, ui
 {
   const uint8_t cmd[2] = {stm_configuration.wm, (uint8_t)(stm_configuration.wm^0xff)};
   const uint8_t addr_chksum =  addr[0] ^ addr[1] ^ addr[2] ^ addr[3];
-  uint8_t response;
+  uint8_t response=0x0;
 
   //send command
   stm32_write(cmd, 2);
@@ -197,9 +219,10 @@ stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, ui
 
   if(response != STM32_ACK)
   {
-    usb_transmit_msg("Sending payload command failed. ACK not received");
+    usb_transmit_msg("Sending payload command failed. ACK not received %x != 0x79", response);
     return false;
   }
+  response = 0x0;
 
   // send addr
   stm32_write(addr.data(), addr.size());
@@ -209,12 +232,15 @@ stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, ui
   stm32_read(&response, 1);
   if(response != STM32_ACK)
   {
-    usb_transmit_msg("Sending payload address failed. ACK not received");
+    usb_transmit_msg("Sending payload address failed. ACK not received %x != 0x79", response);
     return false;
   }
+  response = 0x0;
 
+  // we send N as a number of bytes to receive and than N+1 bytes
+  const uint8_t real_size = size-1;
   // send payload size
-  stm32_write(&size, 1);
+  stm32_write(&real_size, 1);
   // send payload
   stm32_write(payload, size);
   // send addr checksum
@@ -223,14 +249,12 @@ stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, ui
   stm32_read(&response, 1);
   if(response != STM32_ACK)
   {
-    usb_transmit_msg("Sending payload failed. ACK not received");
+    usb_transmit_msg("Sending payload frame failed. ACK not received %x != 0x79", response);
     return false;
   }
 
   return true;
 }
-
-
 
 static void
 init_transfer()

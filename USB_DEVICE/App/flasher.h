@@ -20,6 +20,7 @@ typedef struct  {
         uint8_t uw;
         uint8_t rp;
         uint8_t ur;
+        uint8_t ch; // ony with firmware > 3.3
 }stm32_config;
 
 void handle_command(uint8_t *data, uint32_t size);

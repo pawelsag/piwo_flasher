@@ -15,7 +15,9 @@ using namespace std::chrono_literals;
 
 const char * usage = "./flash_stm  /path/to/device /path/to/flash/binary\n";
 constexpr uint32_t start_flash_addr = 0x80000000;
-constexpr size_t buffer_size = 256;
+// TODO change the max size to  flash_frame_max_data_lengt
+// when STM will reasemble the packets received via the USB CDC
+constexpr uint8_t max_usb_cdc_transfer_size = 64;
 
 std::condition_variable cv_response;
 std::mutex mtx_response;
@@ -105,8 +107,9 @@ wait_for_response()
   std::unique_lock<std::mutex> lk(mtx_response);
   if(!cv_response.wait_for(lk, 10000ms, []{return response != flash_response_type::NONE;})) 
     return false;
-
-  return response == flash_response_type::ACK;
+  auto rsp = response;
+  response = flash_response_type::NONE;
+  return rsp == flash_response_type::ACK;
 }
 
 static bool
@@ -132,12 +135,12 @@ static bool
 send_frame(int fd, uint32_t addr, uint8_t *payload, size_t payload_size)
 {
   uint8_t buf[flash_frame_max_length];
-  raw_packet raw_packet(buf, flash_frame_max_length);
+  raw_packet raw_packet(buf, max_usb_cdc_transfer_size);
   auto flash_frame_builder_opt = flash_frame_builder::make_flash_frame_builder(raw_packet);
 
   if(!flash_frame_builder_opt.has_value())
   {
-    printf("Creating frame packet failed. Can't flash device\n");
+    printf("[FLASHER] Creating frame packet failed. Can't flash device\n");
     return false;
   }
 
@@ -147,7 +150,7 @@ send_frame(int fd, uint32_t addr, uint8_t *payload, size_t payload_size)
 
   if(!flash_frame_builder.append_data(payload, payload_size))
   {
-    printf("Adding payload to frame failed. Can't flash device\n");
+    printf("[FLASHER] Adding payload to frame failed. Can't flash device\n");
     return false;
   }
   flash_frame flash_frame_packet(flash_frame_builder);
@@ -238,10 +241,10 @@ int main(int argc, char* argv[])
   int device, binary;
   uint8_t packet_buf[max_packet_size];
   uint8_t file_buf[flash_frame_max_data_length];
-  raw_packet packet(packet_buf, buffer_size);
   size_t file_size = 0, total_bytes_read = 0;
   size_t bytes_read = 0, next_read = 0, to_send = 0;
   struct stat st;
+  constexpr uint8_t max_payload = max_usb_cdc_transfer_size - flash_frame_header_length;
 
   if(argc != 3)
   {
@@ -262,14 +265,13 @@ int main(int argc, char* argv[])
     printf("Setting device params, failed\n");
     return -3;
   }
-  
-  binary = open(argv[2], O_RDWR);
+
+  binary = open(argv[2], O_RDONLY);
   if (binary == -1)
   {
     printf("Can't open file.\n");
     return -2;
   }
-
 
   stat(argv[2], &st);
   file_size = st.st_size;
@@ -289,11 +291,11 @@ int main(int argc, char* argv[])
     finish = true;
     return -1;
   }
-
-  next_read = flash_frame_max_data_length; 
+  next_read = max_payload; 
   while(total_bytes_read < file_size)
   {
     bytes_read = read(binary, file_buf + to_send, next_read);
+    printf("[FLASHER] Read bytes %d \n", bytes_read);
     to_send += bytes_read;
 
     if(bytes_read == 0)
@@ -301,7 +303,7 @@ int main(int argc, char* argv[])
       // we can get here only when the payload size is not alligned to 4
       if(to_send != 0)
       {
-        while(to_send & 0x11){
+        while(to_send & 0b11){
           file_buf[to_send] = 0x0;
           to_send++;
         }
@@ -359,18 +361,20 @@ int main(int argc, char* argv[])
    flash_address = start_flash_addr + total_bytes_read;
    total_bytes_read += bytes_read;
 
-    if(bytes_read & 0x11) {
+    if(bytes_read & 0b11) {
       next_read = next_read - bytes_read;
       continue;
     }
     else
-      next_read = flash_frame_max_data_length;
+      next_read = max_payload;
 
-   if(send_frame_with_correct_endian(device, flash_address, file_buf, to_send))
+   if(!send_frame_with_correct_endian(device, flash_address, file_buf, to_send))
    {
-     printf("Sending frame packet failed");
+     printf("[FLASHER] Sending frame packet failed");
      return  -4;
    }
+
+   printf("[FLASHER] Waiting for response...");
    if(!wait_for_response())
    {
      printf("[FLASHER] Waiting for frame packet response failed\n");
