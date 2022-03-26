@@ -10,7 +10,7 @@ struct usb_data
   uint8_t len;
 };
 
-#define CURRENT_UART UART4
+#define CURRENT_UART USART1
 // TODO add usb handle define
 
 extern int usb_event_rx;
