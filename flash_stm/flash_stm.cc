@@ -8,23 +8,31 @@
 #include <termios.h>
 #include <string.h>
 #include <atomic>
+#include <array>
 #include <condition_variable>
 #include <chrono>
+#include<spdlog/spdlog.h>
 
 using namespace std::chrono_literals;
 
-const char * usage = "./flash_stm  /path/to/device /path/to/flash/binary\n";
-constexpr uint32_t start_flash_addr = 0x80000000;
-// TODO change the max size to  flash_frame_max_data_lengt
-// when STM will reasemble the packets received via the USB CDC
+/* TODO change the max size to  flash_frame_max_data_lengt
+ * when STM will reasemble the packets received via the USB CDC
+ */
 constexpr uint8_t max_usb_cdc_transfer_size = 64;
+const std::string usage =
+"\n[USAGE]./flash_stm  device binary [debug_level]\n"
+"\t device - path to device file in /dev directory usually: /dev/ttyACM0\n"
+"\t binary - path to binary to flash\n"
+"\t debug_level - one of: info, debug, trace\n";
+
+constexpr uint32_t start_flash_addr = 0x80000000;
 
 std::condition_variable cv_response;
 std::mutex mtx_response;
 
 flash_response_type response = flash_response_type::NONE;
 
-bool finish = false;
+std::atomic_bool finish = false;
 
 bool
 write_all(int fd, uint8_t *buf, size_t size)
@@ -73,7 +81,7 @@ void receive_msg(int device)
          auto flash_response_packet = flash_response_packet_opt.value();
          response = flash_response_packet.get_response();
          cv_response.notify_all();
-         printf("[STM32 RESPONSE] %s \n", flash_response_packet.get_response() == flash_response_type::ACK ? "ACK" : "NACK");
+         spdlog::debug("[STM32 RESPONSE] {}", flash_response_packet.get_response() == flash_response_type::ACK ? "ACK" : "NACK");
         }
         break;
 
@@ -86,11 +94,11 @@ void receive_msg(int device)
           return;
 
         auto flash_msg_packet = flash_msg_packet_opt.value();
-        printf("[STM32 MSG] %s\n", flash_msg_packet.get_msg());
+        spdlog::debug("[STM32 MSG] {}", flash_msg_packet.get_msg());
       }
       break;
       default:
-        printf("Incorrect frame %d %d\n", buf[0], buf[1]);
+      spdlog::error("[FLASHER] Incorrect frame {} {}", buf[0], buf[1]);
         continue;
     }
   }
@@ -120,7 +128,7 @@ send_init_packet(int fd)
   auto flash_init_builder_opt = flash_init_builder::make_flash_init_builder(raw_packet);
   if(!flash_init_builder_opt.has_value())
   {
-    printf("Creating init packet failed\n");
+    spdlog::error("[FLASHER] Creating init packet failed\n");
     return false;
   }
 
@@ -140,7 +148,7 @@ send_frame(int fd, uint32_t addr, uint8_t *payload, size_t payload_size)
 
   if(!flash_frame_builder_opt.has_value())
   {
-    printf("[FLASHER] Creating frame packet failed. Can't flash device\n");
+    spdlog::error("[FLASHER] Creating frame packet failed. Can't flash device");
     return false;
   }
 
@@ -150,7 +158,7 @@ send_frame(int fd, uint32_t addr, uint8_t *payload, size_t payload_size)
 
   if(!flash_frame_builder.append_data(payload, payload_size))
   {
-    printf("[FLASHER] Adding payload to frame failed. Can't flash device\n");
+    spdlog::error("[FLASHER] Adding payload to frame failed. Can't flash device");
     return false;
   }
   flash_frame flash_frame_packet(flash_frame_builder);
@@ -176,7 +184,7 @@ send_reset_packet(int fd)
   auto flash_reset_builder_opt = flash_reset_builder::make_flash_reset_builder(raw_packet);
   if(!flash_reset_builder_opt.has_value())
   {
-    printf("Creating init packet failed\n");
+    spdlog::error("[FLASHER] Creating init packet failed");
     return false;
   }
 
@@ -192,7 +200,7 @@ set_device_params(int fd)
   struct termios tty;
 
   if ( tcgetattr (fd, &tty) != 0 ) {
-    printf("Can't get tty params. tcgetattr failed, err=%d\n", errno);
+    spdlog::error("[FLASHER] Can't get tty params. tcgetattr failed, err={}", errno);
     return false;
   }
 
@@ -224,7 +232,7 @@ set_device_params(int fd)
   cfsetspeed(&tty, (speed_t)B115200);
 
   if ( tcsetattr ( fd, TCSANOW, &tty ) != 0) {
-    printf("Setting device attributes failed, err=%d\n", errno);
+    spdlog::error("[FLASHER] Setting device attributes failed, err={}", errno);
     return false;
   }
   return true;
@@ -246,48 +254,73 @@ int main(int argc, char* argv[])
   struct stat st;
   constexpr uint8_t max_payload = max_usb_cdc_transfer_size - flash_frame_header_length;
 
-  if(argc != 3)
+  constexpr uint8_t progres_bar_width = 25;
+  std::array<char, progres_bar_width> progress_bar;
+  progress_bar.fill(' ');
+  bool disable_proggress = false;
+
+  if(argc < 3)
   {
-    printf("%s", usage);
+    spdlog::info("{}", usage);
     return -1;
+  }
+
+  if(argc == 4)
+  {
+    if(strcmp(argv[3], "info") == 0)
+    {
+      spdlog::set_level(spdlog::level::info);
+    }else if(strcmp(argv[3], "debug") == 0)
+    {
+      spdlog::set_level(spdlog::level::debug);
+      disable_proggress = true;
+    }else if(strcmp(argv[3], "trace") == 0)
+    {
+      spdlog::set_level(spdlog::level::trace);
+      disable_proggress = true;
+    }else{
+      spdlog::error("Invalid logging category level");
+      spdlog::info("{}", usage);
+      return -1;
+    }
   }
 
   device = open(argv[1], O_RDWR);
   if(device == -1)
   {
-    printf("Can't open device.\n");
+    spdlog::error("[FLASHER] Can't open device");
     return -2;
   }
   std::thread(receive_msg, device).detach();
 
   if(!set_device_params(device))
   {
-    printf("Setting device params, failed\n");
+    spdlog::error("[FLASHER] Setting device params, failed");
     return -3;
   }
 
   binary = open(argv[2], O_RDONLY);
   if (binary == -1)
   {
-    printf("Can't open file.\n");
+    spdlog::error("[FLASHER] Can't open file.");
     return -2;
   }
 
   stat(argv[2], &st);
   file_size = st.st_size;
-  printf("Flashing binary %s of size %d \n", argv[2], file_size);
+  spdlog::info("[FLASHER] Flashing binary {} of size {}", argv[2], file_size);
 
   // init packet
   if(!send_init_packet(device))
   {
-    printf("[FLASHER] Sending init packet fail\n");
+    spdlog::error("[FLASHER] Sending init packet fail");
     finish = true;
     return -1;
   }
 
   if(!wait_for_response())
   {
-    printf("[FLASHER] Waiting for init response failed\n");
+    spdlog::error("[FLASHER] Waiting for init response failed");
     finish = true;
     return -1;
   }
@@ -295,7 +328,7 @@ int main(int argc, char* argv[])
   while(total_bytes_read < file_size)
   {
     bytes_read = read(binary, file_buf + to_send, next_read);
-    printf("[FLASHER] Read bytes %d \n", bytes_read);
+    spdlog::trace("[FLASHER] Read bytes {}", bytes_read);
     to_send += bytes_read;
 
     if(bytes_read == 0)
@@ -309,53 +342,50 @@ int main(int argc, char* argv[])
         }
         if(!send_frame_with_correct_endian(device, flash_address, file_buf, to_send))
         {
-          printf("[FLASHER] Sending frame packet failed");
+          spdlog::error("[FLASHER] Sending frame packet failed");
           finish = true;
           return -4;
         }
 
         if(!wait_for_response())
         {
-          printf("[FLASHER] Waiting for frame packet response failed\n");
+          spdlog::error("[FLASHER] Waiting for frame packet response failed");
           finish = true;
           return -1;
         }
       }
 
-      printf("[FLASHER] Bytes %lu flashed\n", file_size);
-
       if(!send_reset_packet(device))
       {
-        printf("[FLASHER] Sending reset packet failed");
+        spdlog::error("[FLASHER] Sending reset packet failed");
         finish = true;
         return -4;
       }
       if(!wait_for_response())
       {
-        printf("[FLASHER] Waiting for reset packet response failed\n");
+        spdlog::error("[FLASHER] Waiting for reset packet response failed");
         finish = true;
         return -1;
       }
-
       break;
     }
 
     if(bytes_read < 0)
     {
-      printf("[FLASHER] Data read general error %d\n", errno);
+      spdlog::error("[FLASHER] Data read general error {}", errno);
       if(!send_reset_packet(device))
       {
-        printf("[FLASHER] Sending reset packet failed");
+        spdlog::error("[FLASHER] Sending reset packet failed");
         finish = true;
         return -4;
       }
       if(!wait_for_response())
       {
-        printf("[FLASHER] Waiting for reset packet response failed\n");
+        spdlog::error("[FLASHER] Waiting for reset packet response failed\n");
         finish = true;
         return -1;
       }
-      break;
+      return -2;
     }
 
    flash_address = start_flash_addr + total_bytes_read;
@@ -370,20 +400,29 @@ int main(int argc, char* argv[])
 
    if(!send_frame_with_correct_endian(device, flash_address, file_buf, to_send))
    {
-     printf("[FLASHER] Sending frame packet failed");
+     spdlog::error("[FLASHER] Sending frame packet failed");
      return  -4;
    }
 
-   printf("[FLASHER] Waiting for response...");
+   spdlog::trace("[FLASHER] Waiting for response...");
    if(!wait_for_response())
    {
-     printf("[FLASHER] Waiting for frame packet response failed\n");
+     spdlog::error("[FLASHER] Waiting for frame packet response failed");
      finish = true;
      return -1;
+   }
+   if(!disable_proggress)
+   {
+     const uint8_t progress = static_cast<uint8_t>(total_bytes_read/static_cast<double>(file_size)*100);
+     const uint8_t bar_percent = static_cast<uint8_t>(total_bytes_read/static_cast<double>(file_size)*25);
+     std::fill_n(progress_bar.begin(), bar_percent, '#');
+     printf("Progress[%25s] [%d%]\r", progress_bar.data(), progress);
+     fflush(stdout);
    }
    to_send = 0;
   }
 
+  spdlog::info("[FLASHER] Job Completed. Binary {} with size {} flashed", argv[2], file_size);
   finish = true;
   close(device);
 }
