@@ -354,19 +354,6 @@ int main(int argc, char* argv[])
           return -1;
         }
       }
-
-      if(!send_reset_packet(device))
-      {
-        spdlog::error("[FLASHER] Sending reset packet failed");
-        finish = true;
-        return -4;
-      }
-      if(!wait_for_response())
-      {
-        spdlog::error("[FLASHER] Waiting for reset packet response failed");
-        finish = true;
-        return -1;
-      }
       break;
     }
 
@@ -420,6 +407,19 @@ int main(int argc, char* argv[])
      fflush(stdout);
    }
    to_send = 0;
+  }
+
+  if(!send_reset_packet(device))
+  {
+    spdlog::error("[FLASHER] Sending reset packet failed");
+    finish = true;
+    return -4;
+  }
+  if(!wait_for_response())
+  {
+    spdlog::error("[FLASHER] Waiting for reset packet response failed");
+    finish = true;
+    return -1;
   }
 
   spdlog::info("[FLASHER] Job Completed. Binary {} with size {} flashed", argv[2], file_size);

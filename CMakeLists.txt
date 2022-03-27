@@ -7,16 +7,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_C_STANDARD 11)
 
 option(CONFIG_BUILD_TESTS "Enable tests" OFF)
+option(CONFIG_SIMULATION "Enable simulation" OFF)
 
 # disable warning no-regsiter only for cxx files
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-register")
-
-if(NOT DEFINED PIWO_PC_FILE_NAME)
-  set(PIWO_PC_FILE_NAME piwo)
-  set(PIWO_PC_VERSION_REQUIRED "1.6")
-else()
-  set(PIWO_PC_VERSION_REQUIRED "0.1")
-endif(NOT DEFINED PIWO_PC_FILE_NAME)
 
   include_directories(Proto)
 if(CONFIG_BUILD_TESTS)
@@ -49,11 +43,6 @@ else()
   set(VERSION_MAJOR "6")
   set(VERSION_MINOR "0")
 
-  set(PIWO "${PROJECT_NAME}.${VERSION_MAJOR}.${VERSION_MINOR}")
-
-  find_package(PkgConfig REQUIRED)
-  pkg_check_modules(${PIWO_PC_FILE_NAME} REQUIRED ${PIWO_PC_FILE_NAME}>=${PIWO_PC_VERSION_REQUIRED})
-
   file(GLOB_RECURSE MAIN_SOURCES ${CMAKE_SOURCE_DIR}/Core/Src/*.c)
   file(GLOB_RECURSE MIDDLEWARES_SOURCES ${CMAKE_SOURCE_DIR}/Middlewares/Src/*.c*)
   file(GLOB_RECURSE USB_APP_SOURCES ${CMAKE_SOURCE_DIR}/USB_DEVICE/App/*.c*)
@@ -72,6 +61,11 @@ else()
   add_executable(${TARGET_NAME}
     ${PIWO_SOURCES}
   )
+
+  if(CONFIG_SIMULATION)
+    target_compile_definitions(${TARGET_NAME} PUBLIC WITH_SIMULATION)
+  endif()
+
 
   target_compile_options(${TARGET_NAME} BEFORE PUBLIC ${MPU_FLAGS} ${VFP_FLAGS} ${COMMON_FLAGS} ${DIAGNOSTIC_FLAGS})
 

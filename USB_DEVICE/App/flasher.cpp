@@ -359,6 +359,11 @@ handle_command(uint8_t *data, uint32_t size)
           }
 
           reset_transfer();
+          usb_transmit_msg("Reset done");
+#if defined(WITH_SIMULATION)
+          uint8_t simulation_resest_cmd[2] = {0x3, 0xfc};
+          stm32_write(simulation_resest_cmd, 2);
+#endif
           usb_transmit_cmd_response(flash_response_type::ACK);
         }
         break;
