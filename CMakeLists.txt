@@ -8,6 +8,7 @@ set(CMAKE_C_STANDARD 11)
 
 option(CONFIG_BUILD_TESTS "Enable tests" OFF)
 option(CONFIG_SIMULATION "Enable simulation" OFF)
+set(BOARD "STM32F303" CACHE STRING "Board selector for which the application will be build(default: stm32f303) (Not used with tests)")
 
 # disable warning no-regsiter only for cxx files
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-register")
@@ -19,18 +20,15 @@ if(CONFIG_BUILD_TESTS)
 else()
   set(TARGET_NAME flasher)
 
-  # set proper files name
-  SET(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32F303VCTx_FLASH.ld)
-  SET(BOOT_FILE  ${CMAKE_SOURCE_DIR}/startup_stm32f303xc.s)
+  if(${BOARD} STREQUAL "STM32F303")
+    message("-- Selected board is STM32F303")
+    add_subdirectory(stm32f303)
+  else()
+    message( FATAL_ERROR "Selected board doesn't exist" )
+  endif()
 
-  include_directories(Core/Inc)
-  include_directories(USB_DEVICE/App)
-  include_directories(USB_DEVICE/Target)
-  include_directories(Middlewares/Inc)
-  include_directories(Drivers/STM32F3xx_HAL_Driver/Inc)
-  include_directories(Drivers/STM32F3xx_HAL_Driver/Inc/Legacy)
-  include_directories(Drivers/CMSIS/Device/ST/STM32F3xx/Include)
-  include_directories(Drivers/CMSIS/Include)
+  include_directories(App)
+  include_directories(${target_INCLUDE_DIRS})
 
   set(ELF_FILE ${PROJECT_NAME}.elf)
   set(HEX_FILE ${PROJECT_NAME}.hex)
@@ -40,18 +38,11 @@ else()
   set(BIN_FILEPATH ${CMAKE_BINARY_DIR}/${BIN_FILE})
   set(ELF_FILEPATH ${CMAKE_BINARY_DIR}/${ELF_FILE})
 
-  file(GLOB_RECURSE MAIN_SOURCES ${CMAKE_SOURCE_DIR}/Core/Src/*.c)
-  file(GLOB_RECURSE MIDDLEWARES_SOURCES ${CMAKE_SOURCE_DIR}/Middlewares/Src/*.c*)
-  file(GLOB_RECURSE USB_APP_SOURCES ${CMAKE_SOURCE_DIR}/USB_DEVICE/App/*.c*)
-  file(GLOB_RECURSE USB_TARGET_SOURCES ${CMAKE_SOURCE_DIR}/USB_DEVICE/Target/*.c*)
-  file(GLOB_RECURSE HAL_SRC ${CMAKE_SOURCE_DIR}/Drivers/STM32F3xx_HAL_Driver/Src/*.c*)
+  file(GLOB_RECURSE USB_APP_SOURCES ${CMAKE_SOURCE_DIR}/App/*.c*)
 
   set(PIWO_SOURCES
     ${USB_APP_SOURCES}
-    ${USB_TARGET_SOURCES}
-    ${HAL_SRC}
-    ${MIDDLEWARES_SOURCES}
-    ${MAIN_SOURCES}
+    ${target_SOURCES}
     ${BOOT_FILE}
   )
 
