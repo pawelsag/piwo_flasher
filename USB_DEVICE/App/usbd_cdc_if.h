@@ -29,13 +29,7 @@
 #include "config.h"
 #include <string.h>
 
-extern USBD_CDC_ItfTypeDef USBD_Interface_fops_FS;
-
-extern UART_HandleTypeDef huartx;
-
 uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
-
-void usb_transmit_msg(const char *format, ...);
 
 #ifdef __cplusplus
 }

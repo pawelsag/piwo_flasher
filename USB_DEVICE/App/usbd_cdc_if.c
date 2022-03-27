@@ -24,8 +24,6 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "flasher.h"
-
 #define APP_RX_DATA_SIZE  256
 #define APP_TX_DATA_SIZE  256
 

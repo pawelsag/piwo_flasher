@@ -1,8 +1,9 @@
 extern "C" {
 #include "flasher.h"
+#include "usbd_cdc_if.h"
 }
-#include "global.hpp"
 #include <stdarg.h>
+#include "config.h"
 
 #include "proto.hpp"
 constexpr int uart_timeout_ms = 1000;
@@ -43,7 +44,7 @@ void usb_transmit_msg(const char *format, ...)
   }
 };
 
-void
+static void
 usb_transmit_cmd_response(flash_response_type response)
 {
   const int attemps = 10;
@@ -71,19 +72,19 @@ usb_transmit_cmd_response(flash_response_type response)
   }
 }
 
-int
+static int
 stm32_read(uint8_t* buf, uint32_t count)
 {
   return HAL_UART_Receive(&huartx, (uint8_t*)buf, count, uart_timeout_ms);
 }
 
-int
+static int
 stm32_write(const uint8_t* buf, uint32_t count)
 {
   return HAL_UART_Transmit(&huartx, (uint8_t*)buf, count, uart_timeout_ms);
 }
 
-bool
+static bool
 stm32_init()
 {
   constexpr int cmds_res_size = 12;
@@ -178,7 +179,7 @@ get_config()
   return stm_configuration;
 }
 
-bool
+static bool
 stm32_erase_flash()
 {
   constexpr uint8_t num_of_pages = 0xff;
@@ -206,7 +207,7 @@ stm32_erase_flash()
   return true;
 }
 
-bool
+static  bool
 stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, uint8_t chksum)
 {
   const uint8_t cmd[2] = {stm_configuration.wm, (uint8_t)(stm_configuration.wm^0xff)};

@@ -19,12 +19,9 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "usb_device.h"
-#include "usbd_cdc_if.h"
-#include "flasher.h"
-
-int usb_event_rx = 0;
-
-struct usb_data usb_rx;
+/* [COPY ME] */
+#include "config.h"
+/* [END COPY ME] */
 
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
@@ -38,6 +35,7 @@ int main(void)
   MX_USB_DEVICE_Init();
   while (1)
   {
+      /* [COPY ME] */
       // TODO need to reassemble the packet when its size is
       // greater than 64 Bytes
       if(usb_event_rx)
@@ -45,6 +43,7 @@ int main(void)
         handle_command(usb_rx.buf, usb_rx.len);
         usb_event_rx = 0;
       }
+      /* [END COPY ME] */
   }
 }
 

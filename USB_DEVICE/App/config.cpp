@@ -1,4 +1,8 @@
-#include "global.hpp"
+#include "config.h"
+
+int usb_event_rx = 0;
+
+struct usb_data usb_rx;
 
 UART_HandleTypeDef huartx;
 

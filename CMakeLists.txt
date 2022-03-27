@@ -17,7 +17,7 @@ if(CONFIG_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
 else()
-  set(TARGET_NAME module)
+  set(TARGET_NAME flasher)
 
   # set proper files name
   SET(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32F303VCTx_FLASH.ld)
@@ -39,9 +39,6 @@ else()
   set(HEX_FILEPATH ${CMAKE_BINARY_DIR}/${HEX_FILE})
   set(BIN_FILEPATH ${CMAKE_BINARY_DIR}/${BIN_FILE})
   set(ELF_FILEPATH ${CMAKE_BINARY_DIR}/${ELF_FILE})
-
-  set(VERSION_MAJOR "6")
-  set(VERSION_MINOR "0")
 
   file(GLOB_RECURSE MAIN_SOURCES ${CMAKE_SOURCE_DIR}/Core/Src/*.c)
   file(GLOB_RECURSE MIDDLEWARES_SOURCES ${CMAKE_SOURCE_DIR}/Middlewares/Src/*.c*)
