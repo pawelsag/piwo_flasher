@@ -4,10 +4,21 @@ extern "C" {
 }
 #include <stdarg.h>
 #include "config.h"
+#include "ring_buffer.hpp"
 
 #include "proto.hpp"
-constexpr int uart_timeout_ms = 1000;
+constexpr int uart_timeout_ms = 3000;
 stm32_config stm_configuration;
+
+uint8_t uart_rx_token;
+
+ring_buffer<300, uint8_t> rx_queue;
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  rx_queue.push_no_wait(uart_rx_token); 
+  HAL_UART_Receive_IT(&huartx, &uart_rx_token, 1);
+}
 
 void usb_transmit_msg(const char *format, ...)
 {
@@ -75,7 +86,30 @@ usb_transmit_cmd_response(flash_response_type response)
 static int
 stm32_read(uint8_t* buf, uint32_t count)
 {
-  return HAL_UART_Receive(&huartx, (uint8_t*)buf, count, uart_timeout_ms);
+  constexpr int attempts_init = 1000;
+  int attempts = attempts_init;
+  int counter = 0;
+  while(counter < count)
+  {
+    while(attempts > 0)
+    {
+      if(rx_queue.pop(buf+counter))
+      {
+        counter++;
+        break;
+      }
+      else
+      {
+        HAL_Delay(1);
+        attempts--;
+      }
+    }
+    if(attempts == 0)
+      return HAL_ERROR;
+
+    attempts = attempts_init;
+  }
+  return HAL_OK;
 }
 
 static int
@@ -258,25 +292,29 @@ stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, ui
 }
 
 static void
+reset_hw_stm()
+{
+  HAL_GPIO_WritePin(GPIOC, Reset_Pin, GPIO_PIN_RESET);
+  HAL_Delay(100);
+  HAL_GPIO_WritePin(GPIOC, Reset_Pin, GPIO_PIN_SET);
+  HAL_Delay(100);
+}
+
+static void
 init_transfer()
 {
   HAL_GPIO_WritePin(GPIOC, Boot_Pin, GPIO_PIN_SET);
-  HAL_Delay(10);
-  HAL_GPIO_WritePin(GPIOC, Reset_Pin, GPIO_PIN_SET);
-  HAL_Delay(5);
-  HAL_GPIO_WritePin(GPIOC, Reset_Pin, GPIO_PIN_RESET);
+  HAL_Delay(100);
+  reset_hw_stm();
 }
 
 static void
 reset_transfer()
 {
   HAL_GPIO_WritePin(GPIOC, Boot_Pin, GPIO_PIN_RESET);
-  HAL_Delay(10);
-  HAL_GPIO_WritePin(GPIOC, Reset_Pin, GPIO_PIN_SET);
-  HAL_Delay(5);
-  HAL_GPIO_WritePin(GPIOC, Reset_Pin, GPIO_PIN_RESET);
+  HAL_Delay(100);
+  reset_hw_stm();
 }
-
 
 void
 handle_command(uint8_t *data, uint32_t size)
@@ -308,12 +346,15 @@ handle_command(uint8_t *data, uint32_t size)
           }
 
           auto flash_init = flash_init_opt.value();
+          rx_queue.reset();
+          HAL_UART_Receive_IT(&huartx, &uart_rx_token, 1);
           init_transfer();
 
           if(!stm32_init())
           {
             usb_transmit_msg("Init cmd failed");
             usb_transmit_cmd_response(flash_response_type::NACK);
+            reset_transfer();
             return;
           }
 
@@ -321,6 +362,7 @@ handle_command(uint8_t *data, uint32_t size)
           {
             usb_transmit_msg("Erase cmd failed");
             usb_transmit_cmd_response(flash_response_type::NACK);
+            reset_transfer();
             return;
           }
           usb_transmit_cmd_response(flash_response_type::ACK);
