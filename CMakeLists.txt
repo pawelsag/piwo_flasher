@@ -56,7 +56,6 @@ else()
     target_compile_definitions(${TARGET_NAME} PUBLIC WITH_SIMULATION)
   endif()
 
-
   target_compile_options(${TARGET_NAME} BEFORE PUBLIC ${MPU_FLAGS} ${VFP_FLAGS} ${COMMON_FLAGS} ${DIAGNOSTIC_FLAGS})
 
   target_compile_definitions(${TARGET_NAME} PUBLIC ${SDK_FLAGS})
@@ -85,7 +84,6 @@ else()
   add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
                      COMMENT "Target size: ${ELF_FILE}"
                      COMMAND ${CMAKE_OBJECT_SIZE} ${PROJECT_NAME}.elf)
-
 
   add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
                      COMMENT "Building: ${HEX_FILE}"

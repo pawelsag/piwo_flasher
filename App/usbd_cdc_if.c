@@ -60,8 +60,10 @@ uint32_t cdc_stopbits_to_hal_stopbits(uint8_t stopbits)
   {
   case 0:
     return UART_STOPBITS_1;
+#ifdef UART_STOPBITS_1_5
   case 1:
     return UART_STOPBITS_1_5;
+#endif
   case 2:
     return UART_STOPBITS_2;
   default:

@@ -328,8 +328,10 @@ print_hw_config()
   // show stop_bits
   if(huartx.Init.StopBits == UART_STOPBITS_1)
     usb_transmit_msg("Uart stopbits: 1 bit");
+#ifdef UART_STOPBITS_1_5
   else if(huartx.Init.StopBits == UART_STOPBITS_1_5)
     usb_transmit_msg("Uart stopbits: 1.5 bit");
+#endif
   else if(huartx.Init.StopBits == UART_STOPBITS_2)
     usb_transmit_msg("Uart stopbits: 2 bits");
   else
