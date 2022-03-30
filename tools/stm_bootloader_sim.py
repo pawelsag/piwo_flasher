@@ -6,9 +6,9 @@ STM_NACK=0x1F
 bootloader_ver=0x20
 bootloader_flash_size = 62000 #62KB
 flash_memory = [0]*bootloader_flash_size
-flash_mem_base = 0x80000000
+flash_mem_base = 0x8000000
 
-with serial.Serial('/dev/ttyUSB0', 115200) as s:
+with serial.Serial('/dev/ttyUSB0', baudrate=115200, bytesize=serial.EIGHTBITS, parity=serial.PARITY_EVEN, stopbits=serial.STOPBITS_ONE) as s:
     while True:
         # received init
         init = s.read()
@@ -26,7 +26,7 @@ with serial.Serial('/dev/ttyUSB0', 115200) as s:
                 # get cmd handle
                 COMMANDS_CNT = 12
                 s.write(bytearray([STM_ACK]))
-                s.write(bytearray([COMMANDS_CNT]))
+                s.write(bytearray([COMMANDS_CNT-1]))
                 GET_RESPONSE = bytearray([bootloader_ver, 0x0, 0x1, 0x2, 0x11, 0x21, 0x31, 0x43, 0x63, 0x73, 0x82, 0x92])
                 s.write(GET_RESPONSE)
                 s.write(bytearray([STM_ACK]))
@@ -50,7 +50,7 @@ with serial.Serial('/dev/ttyUSB0', 115200) as s:
                 mem_off = addr_rev - flash_mem_base
 
                 i=0
-                program_chksum_gen = 0x0
+                program_chksum_gen = number_of_bytes[0]
                 print()
                 for b in program_piece:
                     flash_memory[i+mem_off] = b

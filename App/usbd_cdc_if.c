@@ -60,7 +60,6 @@ uint32_t cdc_stopbits_to_hal_stopbits(uint8_t stopbits)
   {
   case 0:
     return UART_STOPBITS_1;
-    break;
   case 1:
     return UART_STOPBITS_1_5;
   case 2:
@@ -78,7 +77,11 @@ uint32_t cdc_wordwidth_to_hal_wordwidth(uint8_t wordwidth)
   case 0x07:
     Error_Handler();
   case 0x08:
-    return UART_WORDLENGTH_8B;
+    // TODO understand or/and fix this
+    // stm32 uart boot protocol
+    // requires the 8 bit data length
+    // since we send an even parity we need to extend the word to 9B
+    return UART_WORDLENGTH_9B;
   case 0x09:
     return UART_WORDLENGTH_9B;
   default:

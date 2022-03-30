@@ -173,7 +173,7 @@ public:
   friend class flash_frame;
 
   bool
-  append_data(const uint8_t *data, uint8_t size) noexcept
+  set_data(const uint8_t *data, uint8_t size) noexcept
   {
     // cannot append data with size that don't divied by 4
     if(size & 0b11)
@@ -185,6 +185,7 @@ public:
     std::copy_n(reinterpret_cast<const usb_byte_t*>(data),
                 size,
                 this->_raw_packet.begin() + current_size + flash_frame_header_length);
+    this->_raw_packet.data()[flash_frame_checksum_pos] = size-1;
     // calculate checksum
     for(uint8_t i =0; i < size; i++) 
       this->_raw_packet.data()[flash_frame_checksum_pos] ^= data[i];

@@ -86,7 +86,7 @@ usb_transmit_cmd_response(flash_response_type response)
 static int
 stm32_read(uint8_t* buf, uint32_t count)
 {
-  constexpr int attempts_init = 1000;
+  constexpr int attempts_init = 2000;
   int attempts = attempts_init;
   int counter = 0;
   while(counter < count)
@@ -121,12 +121,11 @@ stm32_write(const uint8_t* buf, uint32_t count)
 static bool
 stm32_init()
 {
-  constexpr int cmds_res_size = 12;
+  constexpr int cmds_res_size = 12; // 11 commands + version
   uint8_t commands[cmds_res_size];
   uint8_t init_cmd = STM32_CMD_INIT;
   uint8_t get_cmd[2] = {STM32_CMD_GET, STM32_CMD_GET^0xff};
   uint8_t response=0x0;
-
   if(stm32_write(&init_cmd, 1) != HAL_OK)
   {
       usb_transmit_msg("During stm32 config init write the uart error occured");
@@ -166,9 +165,9 @@ stm32_init()
   response = 0x0;
 
   stm32_read(&response, 1);
-  if(response != cmds_res_size)
+  if(response != 11)
   {
-    usb_transmit_msg("STM cmd length incorrect, 12 != %d", response);
+    usb_transmit_msg("STM cmd length incorrect, 11 != %d", response);
     return false;
   }
 
@@ -275,11 +274,16 @@ stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, ui
   // we send N as a number of bytes to receive and than N+1 bytes
   const uint8_t real_size = size-1;
   // send payload size
-  stm32_write(&real_size, 1);
+  if(stm32_write(&real_size, 1) != HAL_OK)
+    usb_transmit_msg("Sending realsize failed", response);
+
   // send payload
-  stm32_write(payload, size);
+  if(stm32_write(payload, size)!= HAL_OK)
+    usb_transmit_msg("Sending payload failed", response);
   // send addr checksum
-  stm32_write(&chksum, 1);
+  if(stm32_write(&chksum, 1) != HAL_OK)
+    usb_transmit_msg("Sending chksum failed", response);
+
 
   stm32_read(&response, 1);
   if(response != STM32_ACK)
@@ -315,6 +319,40 @@ reset_transfer()
   HAL_Delay(100);
   reset_hw_stm();
 }
+static void
+print_hw_config()
+{
+  // show baudrate
+  usb_transmit_msg("Uart baudrate: %d", huartx.Init.BaudRate);
+
+  // show stop_bits
+  if(huartx.Init.StopBits == UART_STOPBITS_1)
+    usb_transmit_msg("Uart stopbits: 1 bit");
+  else if(huartx.Init.StopBits == UART_STOPBITS_1_5)
+    usb_transmit_msg("Uart stopbits: 1.5 bit");
+  else if(huartx.Init.StopBits == UART_STOPBITS_2)
+    usb_transmit_msg("Uart stopbits: 2 bits");
+  else
+    usb_transmit_msg("Uart stopbits: Unknown");
+
+  // show word length
+  if(huartx.Init.WordLength == UART_WORDLENGTH_8B)
+    usb_transmit_msg("Uart word length: 8 bits");
+  else if(huartx.Init.WordLength == UART_WORDLENGTH_9B)
+    usb_transmit_msg("Uart word length: 9 bits");
+  else
+    usb_transmit_msg("Uart word length: Unknown");
+
+  // show parity
+  if(huartx.Init.Parity == UART_PARITY_NONE)
+    usb_transmit_msg("Uart parity: none");
+  else if(huartx.Init.Parity== UART_PARITY_ODD)
+    usb_transmit_msg("Uart parity: odd");
+  else if(huartx.Init.Parity== UART_PARITY_EVEN)
+    usb_transmit_msg("Uart parity: even");
+  else
+    usb_transmit_msg("Uart parity: Unknown");
+}
 
 void
 handle_command(uint8_t *data, uint32_t size)
@@ -336,6 +374,7 @@ handle_command(uint8_t *data, uint32_t size)
   {
       case packet_type::INIT:
         {
+          print_hw_config();
           auto flash_init_opt = flash_init::make_flash_init(packet);
           usb_transmit_msg("Handle init packet");
           if(!flash_init_opt.has_value())

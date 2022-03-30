@@ -25,7 +25,7 @@ const std::string usage =
 "\t binary - path to binary to flash\n"
 "\t debug_level - one of: info, debug, trace\n";
 
-constexpr uint32_t start_flash_addr = 0x80000000;
+constexpr uint32_t start_flash_addr = 0x8000000;
 
 std::condition_variable cv_response;
 std::mutex mtx_response;
@@ -156,7 +156,7 @@ send_frame(int fd, uint32_t addr, uint8_t *payload, size_t payload_size)
 
   flash_frame_builder.set_flash_addr(addr);
 
-  if(!flash_frame_builder.append_data(payload, payload_size))
+  if(!flash_frame_builder.set_data(payload, payload_size))
   {
     spdlog::error("[FLASHER] Adding payload to frame failed. Can't flash device");
     return false;
@@ -205,7 +205,8 @@ set_device_params(int fd)
   }
 
   /* Setting other Port Stuff */
-  tty.c_cflag     &=  ~PARENB;            // No parity
+  tty.c_cflag     |= PARENB;              /* enable parity */
+  tty.c_cflag     &= ~PARODD;             /* Even parity */
   tty.c_cflag     &=  ~CSTOPB;            // One stop bit
   tty.c_cflag     &=  ~CSIZE;
   tty.c_cflag     |=  CS8;                // Set 8 bits per byte
