@@ -1,0 +1,11 @@
+set(TOOLCHAIN_PREFIX arm-none-eabi-)
+set(CMAKE_C_COMPILER ${TOOLCHAIN_PREFIX}gcc)
+set(CMAKE_CXX_COMPILER ${TOOLCHAIN_PREFIX}g++)
+set(CMAKE_OBJECT_COPY ${TOOLCHAIN_PREFIX}objcopy)
+set(CMAKE_OBJECT_SIZE ${TOOLCHAIN_PREFIX}size)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
+set(MPU_FLAGS -mcpu=cortex-m3 -mthumb -march=armv7-m)
+set(VFP_FLAGS -mfloat-abi=soft)
+SET(SDK_FLAGS "-DSTM32F103xB -DUSE_HAL_DRIVER")
+set(COMMON_FLAGS -ffunction-sections -fmessage-length=0 -fno-exceptions)

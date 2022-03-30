@@ -22,12 +22,6 @@ void uart_init(const USBD_CDC_LineCodingTypeDef *cdc_uart_config)
   huartx.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huartx.Init.OverSampling = UART_OVERSAMPLING_16;
 
-#ifdef UART_ONE_BIT_SAMPLE_DISABLE
-  huartx.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-#endif
-#ifdef UART_ADVFEATURE_NO_INIT
-  huartx.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-#endif
   if (HAL_UART_Init(&huartx) != HAL_OK)
   {
     Error_Handler();

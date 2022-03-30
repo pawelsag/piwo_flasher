@@ -8,7 +8,7 @@ set(CMAKE_C_STANDARD 11)
 
 option(CONFIG_BUILD_TESTS "Enable tests" OFF)
 option(CONFIG_SIMULATION "Enable simulation" OFF)
-set(BOARD "STM32F303" CACHE STRING "Board selector for which the application will be build(default: stm32f303) (Not used with tests)")
+set(BOARD "STM32F303" CACHE STRING "Board selector for which the application will be build (default: stm32f303) supported boards: stm32f303, stm32f103")
 
 # disable warning no-regsiter only for cxx files
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-register")
@@ -19,15 +19,8 @@ if(CONFIG_BUILD_TESTS)
   add_subdirectory(tests)
 else()
   set(TARGET_NAME flasher)
-
-  if(${BOARD} STREQUAL "STM32F303")
-    message("-- Selected board is STM32F303")
-    add_subdirectory(stm32f303)
-  elseif(${BOARD} STREQUAL "STM32F103")
-    add_subdirectory(stm32f103)
-  else()
-    message( FATAL_ERROR "Selected board doesn't exist" )
-  endif()
+  string(TOLOWER ${BOARD} BOARD_DIR)
+  add_subdirectory(${BOARD_DIR})
 
   include_directories(App)
   include_directories(${target_INCLUDE_DIRS})
