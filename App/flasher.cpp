@@ -271,19 +271,19 @@ stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, ui
   }
   response = 0x0;
 
-  // we send N as a number of bytes to receive and than N+1 bytes
+  // we send N as a number of bytes to receive
+  // then N+1 bytes are send as stated in documentation
   const uint8_t real_size = size-1;
+
   // send payload size
   if(stm32_write(&real_size, 1) != HAL_OK)
     usb_transmit_msg("Sending realsize failed", response);
-
   // send payload
   if(stm32_write(payload, size)!= HAL_OK)
     usb_transmit_msg("Sending payload failed", response);
   // send addr checksum
   if(stm32_write(&chksum, 1) != HAL_OK)
     usb_transmit_msg("Sending chksum failed", response);
-
 
   stm32_read(&response, 1);
   if(response != STM32_ACK)

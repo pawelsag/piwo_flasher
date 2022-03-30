@@ -76,8 +76,6 @@ with serial.Serial('/dev/ttyUSB0', baudrate=115200, bytesize=serial.EIGHTBITS, p
             elif cmd[0] == 0x3 and cmd[1] == 0xfc: # custom reset bootloader command
                 print("Reset done, exitng")
                 break
-
             else:
                 s.write(bytearray([STM_NACK]))
-
 

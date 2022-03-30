@@ -185,6 +185,8 @@ public:
     std::copy_n(reinterpret_cast<const usb_byte_t*>(data),
                 size,
                 this->_raw_packet.begin() + current_size + flash_frame_header_length);
+    // the number of bytes is taken into
+    // account when the checksum of payload is calculated
     this->_raw_packet.data()[flash_frame_checksum_pos] = size-1;
     // calculate checksum
     for(uint8_t i =0; i < size; i++) 
