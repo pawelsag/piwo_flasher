@@ -205,8 +205,7 @@ set_device_params(int fd)
   }
 
   /* Setting other Port Stuff */
-  tty.c_cflag     |= PARENB;              /* enable parity */
-  tty.c_cflag     &= ~PARODD;             /* Even parity */
+  tty.c_cflag     |= ~PARENB;              /* disable parity */
   tty.c_cflag     &=  ~CSTOPB;            // One stop bit
   tty.c_cflag     &=  ~CSIZE;
   tty.c_cflag     |=  CS8;                // Set 8 bits per byte

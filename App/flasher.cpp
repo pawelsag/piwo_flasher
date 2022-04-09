@@ -1,7 +1,4 @@
-extern "C" {
 #include "flasher.h"
-#include "usbd_cdc_if.h"
-}
 #include <stdarg.h>
 #include "config.h"
 #include "ring_buffer.hpp"
@@ -10,15 +7,16 @@ extern "C" {
 constexpr int uart_timeout_ms = 3000;
 stm32_config stm_configuration;
 
-uint8_t uart_rx_token;
+ring_buffer<100, uint8_t> rx_queue;
 
-ring_buffer<300, uint8_t> rx_queue;
-
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-  rx_queue.push_no_wait(uart_rx_token); 
-  HAL_UART_Receive_IT(&huartx, &uart_rx_token, 1);
+// RX interrupt handler
+void on_uart_rx() {
+    if (uart_is_readable(UART_ID)) {
+        // add bytes to ring buffer
+        rx_queue.push_no_wait(uart_getc(UART_ID));
+    }
 }
+
 
 void usb_transmit_msg(const char *format, ...)
 {
@@ -47,12 +45,13 @@ void usb_transmit_msg(const char *format, ...)
     return;
 
   flash_msg msg = flash_msg(flash_msg_builder);
-
-  while(CDC_Transmit_FS(msg.data(), msg.get_msg_size() + flash_msg_header_length) != USBD_OK && attempt < attemps)
-  {
-    HAL_Delay(50);
+  tud_cdc_n_write(USB_IFACE, msg.data(), msg.get_msg_size() + flash_msg_header_length);
+  do {
+    tud_cdc_n_write_flush(USB_IFACE);
+    tud_task();
     attempt++;
-  }
+  } while(tud_cdc_n_write_available(USB_IFACE) > 0 && attempt < attemps);
+
 };
 
 static void
@@ -75,12 +74,13 @@ usb_transmit_cmd_response(flash_response_type response)
   flash_response_builder.set_response(response);
 
   flash_response response_packet(flash_response_builder);
-
-  while(CDC_Transmit_FS(response_packet.data(), response_packet.size()) != USBD_OK && attempt < attemps)
-  {
-    HAL_Delay(50);
+  tud_cdc_n_write(USB_IFACE, response_packet.data(), response_packet.size());
+  do {
+    tud_cdc_n_write_flush(USB_IFACE);
+    tud_task();
     attempt++;
-  }
+  } while(tud_cdc_n_write_available(USB_IFACE) > 0 && attempt < attemps);
+
 }
 
 static int
@@ -100,22 +100,22 @@ stm32_read(uint8_t* buf, uint32_t count)
       }
       else
       {
-        HAL_Delay(1);
+        sleep_ms(1);
         attempts--;
       }
     }
     if(attempts == 0)
-      return HAL_ERROR;
+      return UART_READ_FAIL;
 
     attempts = attempts_init;
   }
-  return HAL_OK;
+  return UART_READ_OK;
 }
 
-static int
+static void
 stm32_write(const uint8_t* buf, uint32_t count)
 {
-  return HAL_UART_Transmit(&huartx, (uint8_t*)buf, count, uart_timeout_ms);
+  uart_write_blocking(UART_ID, buf, count);
 }
 
 static bool
@@ -126,13 +126,9 @@ stm32_init()
   uint8_t init_cmd = STM32_CMD_INIT;
   uint8_t get_cmd[2] = {STM32_CMD_GET, STM32_CMD_GET^0xff};
   uint8_t response=0x0;
-  if(stm32_write(&init_cmd, 1) != HAL_OK)
-  {
-      usb_transmit_msg("During stm32 config init write the uart error occured");
-      return false;
-  }
+  stm32_write(&init_cmd, 1);
 
-  if(stm32_read(&response, 1) != HAL_OK)
+  if(stm32_read(&response, 1) != UART_READ_OK)
   {
       usb_transmit_msg("During stm32 config init read the uart error occured");
       return false;
@@ -145,13 +141,9 @@ stm32_init()
   }
   response = 0x0;
 
-  if(stm32_write(get_cmd, 2) != HAL_OK)
-  {
-    usb_transmit_msg("During stm32 config get command uart failed");
-    return false;
-  }
+  stm32_write(get_cmd, 2);
 
-  if(stm32_read(&response, 1) != HAL_OK)
+  if(stm32_read(&response, 1) != UART_READ_OK)
   {
       usb_transmit_msg("During stm32 config init read the uart error occured");
       return false;
@@ -191,7 +183,7 @@ stm32_init()
     stm32_read(&stm_configuration.ch, 1);
   }
 
-  if(stm32_read(&response, 1) != HAL_OK)
+  if(stm32_read(&response, 1) != UART_READ_OK)
   {
       return false;
   }
@@ -276,14 +268,12 @@ stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, ui
   const uint8_t real_size = size-1;
 
   // send payload size
-  if(stm32_write(&real_size, 1) != HAL_OK)
-    usb_transmit_msg("Sending realsize failed", response);
+  stm32_write(&real_size, 1);
   // send payload
-  if(stm32_write(payload, size)!= HAL_OK)
-    usb_transmit_msg("Sending payload failed", response);
+  stm32_write(payload, size);
+
   // send addr checksum
-  if(stm32_write(&chksum, 1) != HAL_OK)
-    usb_transmit_msg("Sending chksum failed", response);
+  stm32_write(&chksum, 1);
 
   stm32_read(&response, 1);
   if(response != STM32_ACK)
@@ -298,62 +288,39 @@ stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, ui
 static void
 reset_hw_stm()
 {
-  HAL_GPIO_WritePin(GPIOC, Reset_Pin, GPIO_PIN_RESET);
-  HAL_Delay(100);
-  HAL_GPIO_WritePin(GPIOC, Reset_Pin, GPIO_PIN_SET);
-  HAL_Delay(100);
+  gpio_put(RESET_PIN, 0);
+  sleep_ms(100);
+  gpio_put(RESET_PIN, 1);
+  sleep_ms(100);
 }
 
 static void
 init_transfer()
 {
-  HAL_GPIO_WritePin(GPIOC, Boot_Pin, GPIO_PIN_SET);
-  HAL_Delay(100);
+  gpio_put(BOOT0_PIN, 1);
+  sleep_ms(100);
   reset_hw_stm();
 }
 
 static void
 reset_transfer()
 {
-  HAL_GPIO_WritePin(GPIOC, Boot_Pin, GPIO_PIN_RESET);
-  HAL_Delay(100);
+  gpio_put(BOOT0_PIN, 0);
+  sleep_ms(100);
   reset_hw_stm();
 }
+
 static void
 print_hw_config()
 {
   // show baudrate
-  usb_transmit_msg("Uart baudrate: %d", huartx.Init.BaudRate);
+  usb_transmit_msg("Uart baudrate: %d", BAUD_RATE);
 
   // show stop_bits
-  if(huartx.Init.StopBits == UART_STOPBITS_1)
-    usb_transmit_msg("Uart stopbits: 1 bit");
-#ifdef UART_STOPBITS_1_5
-  else if(huartx.Init.StopBits == UART_STOPBITS_1_5)
-    usb_transmit_msg("Uart stopbits: 1.5 bit");
-#endif
-  else if(huartx.Init.StopBits == UART_STOPBITS_2)
-    usb_transmit_msg("Uart stopbits: 2 bits");
-  else
-    usb_transmit_msg("Uart stopbits: Unknown");
-
-  // show word length
-  if(huartx.Init.WordLength == UART_WORDLENGTH_8B)
-    usb_transmit_msg("Uart word length: 8 bits");
-  else if(huartx.Init.WordLength == UART_WORDLENGTH_9B)
-    usb_transmit_msg("Uart word length: 9 bits");
-  else
-    usb_transmit_msg("Uart word length: Unknown");
-
-  // show parity
-  if(huartx.Init.Parity == UART_PARITY_NONE)
-    usb_transmit_msg("Uart parity: none");
-  else if(huartx.Init.Parity== UART_PARITY_ODD)
-    usb_transmit_msg("Uart parity: odd");
-  else if(huartx.Init.Parity== UART_PARITY_EVEN)
-    usb_transmit_msg("Uart parity: even");
-  else
-    usb_transmit_msg("Uart parity: Unknown");
+  usb_transmit_msg("Uart word length: %d bits", DATA_BITS);
+  usb_transmit_msg("Uart parity: %s", PARITY == UART_PARITY_EVEN ? 
+                                      "Even" : "Odd");
+  usb_transmit_msg("Uart stopbits: %d bit", STOP_BITS);
 }
 
 void
@@ -388,7 +355,6 @@ handle_command(uint8_t *data, uint32_t size)
 
           auto flash_init = flash_init_opt.value();
           rx_queue.reset();
-          HAL_UART_Receive_IT(&huartx, &uart_rx_token, 1);
           init_transfer();
 
           if(!stm32_init())

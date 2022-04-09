@@ -1,31 +1,36 @@
 #pragma once
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
 
-#ifdef __cplusplus
- extern "C" {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wvolatile"
-#endif
-
-#include "usbd_cdc.h"
+#include "bsp/board.h"
+#include "tusb.h"
+#include "pico/stdlib.h"
 #include "flasher.h"
 
-#define CURRENT_UART USART1
+#include "hardware/gpio.h"
+#include "hardware/uart.h"
+#include "hardware/irq.h"
+#include "hardware/regs/intctrl.h"
 
-struct usb_data
-{
-  uint8_t buf [256];
-  uint8_t len;
-};
+#define USB_IFACE 0
 
-extern int usb_event_rx;
-extern struct usb_data usb_rx;
-extern USBD_CDC_ItfTypeDef USBD_Interface_fops_FS;
-extern UART_HandleTypeDef huartx;
+#define UART_ID uart0
+#define BAUD_RATE 115200
+#define DATA_BITS 8
+#define STOP_BITS 1
+#define PARITY    UART_PARITY_EVEN
 
+#define UART_TX_PIN 0
+#define UART_RX_PIN 1
 
-void uart_init(const USBD_CDC_LineCodingTypeDef *cdc_uart_config);
+#define RESET_PIN 2
+#define BOOT0_PIN 3
 
-#ifdef __cplusplus
-#pragma GCC diagnostic pop
-}
-#endif
+#define UART_READ_OK 0
+#define UART_READ_FAIL 1
+
+void init_uart();
+void init_gpio();
+

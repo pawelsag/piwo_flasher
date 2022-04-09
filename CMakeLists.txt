@@ -24,10 +24,15 @@ else()
   pico_sdk_init()
 
   add_executable(${TARGET_NAME}
-    main.cpp
+    App/rpi_main.cpp
+    App/usb_descriptors.c
+    App/config.cpp
+    App/flasher.cpp
   )
 
-  target_link_libraries(${TARGET_NAME} pico_stdlib)
+  target_include_directories(${TARGET_NAME} PUBLIC App)
+
+  target_link_libraries(${TARGET_NAME} pico_stdlib tinyusb_device tinyusb_board hardware_uart)
 
   # create map/bin/hex/uf2 file in addition to ELF.
   pico_add_extra_outputs(${TARGET_NAME})
