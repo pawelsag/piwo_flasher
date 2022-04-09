@@ -8,8 +8,7 @@ Basically, the project delivers the usb --- uart converter, the app that allows 
 ## Requirements
 ### HW
 To flash device you will need some HW. The firmware currently supports:
- - stm32f303
- - stm32f103
+ - rpi\_2040
 But you can easly add another boards, the process will be descrived later.
 However there are some limitations, cause the MCU has to support 3 peripherals:
  - USB
@@ -25,7 +24,7 @@ sudo apt-get install -y pkg-config
 ## Project structure
 
 ### Firmware
-The firmware is placed in the main directory. The platform specific files are located in the stm32xxxxx directories.
+The firmware is placed in the main directory.
 To build the project we have to select the board that will be using as our reference when we are selecting the device on which
 we will operate. The App directory contains the files that are hw agnostic and provide the interface for the given platform.
 The cmake directory contains toolchains for all supported boards.
@@ -35,3 +34,20 @@ The software that can be used for flashing is placed in the `flash_stm` director
 through the usb'uart channel directly to the targeted board.
 ### Simulator
 Simulator is placed in the tools directory
+
+### Build
+Update submodules, this will initialize the TinyUsb library.
+```
+git submodules update --init --recursive
+```
+then build project:
+```
+mkdir build && cd build
+cmake -GNinja -DCMAKE_TOOLCHAIN_FILE=../pico-sdk/cmake/preload/toolchains/pico_arm_gcc.cmake ..
+ninja
+```
+### Flashing
+Connect pico board with BOOTSEL button pressed, then from build directory execute cmd:
+```
+sudo dd bs=512 if=flasher.uf2 of=/dev/sda1
+```
