@@ -133,6 +133,15 @@ stm32_init()
       usb_transmit_msg("During stm32 config init read the uart error occured");
       return false;
   }
+  // why i need to read it second time????
+  // seems that in the rx queue first read containes 0
+  if(response == 0) {
+    if(stm32_read(&response, 1) != UART_READ_OK)
+    {
+        usb_transmit_msg("During stm32 config init read the uart error occured");
+        return false;
+    }
+  }
 
   if(response != STM32_ACK)
   {
