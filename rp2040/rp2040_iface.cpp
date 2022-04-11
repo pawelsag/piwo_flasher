@@ -1,4 +1,8 @@
+#include"iface.h"
 #include "config.h"
+#include "ring_buffer.hpp"
+
+ring_buffer<100, uint8_t> rx_queue;
 
 void init_uart()
 {
@@ -43,5 +47,42 @@ void init_gpio()
   gpio_init(BOOT0_PIN);
   gpio_set_dir(BOOT0_PIN, GPIO_OUT);
   gpio_put(BOOT0_PIN, 0);
+}
+
+void on_uart_rx() {
+    if (uart_is_readable(UART_ID)) {
+        // add bytes to ring buffer
+        rx_queue.push_no_wait(uart_getc(UART_ID));
+    }
+}
+
+void gpio_set(int pin, bool state)
+{
+  gpio_put(pin, state);
+}
+
+void sleep(unsigned int ms)
+{
+  sleep_ms(ms);
+}
+
+bool usb_write(const uint8_t *data, uint32_t size)
+{
+  const int attempts = 10;
+  int attempt = 0;
+
+  tud_cdc_n_write(USB_IFACE, data, size);
+  do {
+    tud_cdc_n_write_flush(USB_IFACE);
+    tud_task();
+    attempt++;
+  } while(tud_cdc_n_write_available(USB_IFACE) > 0 && attempt < attempts);
+  return attempt != attempts;
+}
+
+bool uart_write(const uint8_t *data, uint32_t size)
+{
+  uart_write_blocking(UART_ID, data, size);
+  return true;
 }
 

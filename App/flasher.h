@@ -26,4 +26,3 @@ typedef struct  {
 void handle_command(uint8_t *data, uint32_t size);
 void usb_transmit_msg(const char *format, ...);
 stm32_config get_config();
-void on_uart_rx();

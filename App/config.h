@@ -7,12 +7,14 @@
 #include "bsp/board.h"
 #include "tusb.h"
 #include "pico/stdlib.h"
-#include "flasher.h"
 
 #include "hardware/gpio.h"
 #include "hardware/uart.h"
 #include "hardware/irq.h"
 #include "hardware/regs/intctrl.h"
+
+#include "flasher.h"
+#include "iface.h"
 
 #define USB_IFACE 0
 
@@ -30,7 +32,4 @@
 
 #define UART_READ_OK 0
 #define UART_READ_FAIL 1
-
-void init_uart();
-void init_gpio();
 

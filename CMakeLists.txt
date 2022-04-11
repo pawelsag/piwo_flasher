@@ -26,8 +26,9 @@ else()
   add_executable(${TARGET_NAME}
     App/rpi_main.cpp
     App/usb_descriptors.c
-    App/config.cpp
     App/flasher.cpp
+    App/iface.c
+    rp2040/rp2040_iface.cpp
   )
 
   target_include_directories(${TARGET_NAME} PUBLIC App)

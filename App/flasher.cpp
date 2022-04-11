@@ -7,22 +7,10 @@
 constexpr int uart_timeout_ms = 3000;
 stm32_config stm_configuration;
 
-ring_buffer<100, uint8_t> rx_queue;
-
-// RX interrupt handler
-void on_uart_rx() {
-    if (uart_is_readable(UART_ID)) {
-        // add bytes to ring buffer
-        rx_queue.push_no_wait(uart_getc(UART_ID));
-    }
-}
-
+extern ring_buffer<100, uint8_t> rx_queue;
 
 void usb_transmit_msg(const char *format, ...)
 {
-  const int attemps = 10;
-  int attempt = 0;
-
   uint8_t packet_buf[flash_msg_length];
   uint8_t payload[flash_msg_payload_length];
   va_list args;
@@ -45,21 +33,12 @@ void usb_transmit_msg(const char *format, ...)
     return;
 
   flash_msg msg = flash_msg(flash_msg_builder);
-  tud_cdc_n_write(USB_IFACE, msg.data(), msg.get_msg_size() + flash_msg_header_length);
-  do {
-    tud_cdc_n_write_flush(USB_IFACE);
-    tud_task();
-    attempt++;
-  } while(tud_cdc_n_write_available(USB_IFACE) > 0 && attempt < attemps);
-
+  usb_write(msg.data(), msg.get_msg_size() + flash_msg_header_length);
 };
 
 static void
 usb_transmit_cmd_response(flash_response_type response)
 {
-  const int attemps = 10;
-  int attempt = 0;
-
   uint8_t packet_buf[flash_response_length];
   raw_packet raw_packet(packet_buf, flash_response_length);
 
@@ -74,13 +53,7 @@ usb_transmit_cmd_response(flash_response_type response)
   flash_response_builder.set_response(response);
 
   flash_response response_packet(flash_response_builder);
-  tud_cdc_n_write(USB_IFACE, response_packet.data(), response_packet.size());
-  do {
-    tud_cdc_n_write_flush(USB_IFACE);
-    tud_task();
-    attempt++;
-  } while(tud_cdc_n_write_available(USB_IFACE) > 0 && attempt < attemps);
-
+  usb_write(response_packet.data(), response_packet.size());
 }
 
 static int
@@ -115,7 +88,7 @@ stm32_read(uint8_t* buf, uint32_t count)
 static void
 stm32_write(const uint8_t* buf, uint32_t count)
 {
-  uart_write_blocking(UART_ID, buf, count);
+  uart_write(buf, count);
 }
 
 static bool
@@ -297,25 +270,25 @@ stm32_send_data(const addr_raw_t &addr, const uint8_t *payload, uint8_t size, ui
 static void
 reset_hw_stm()
 {
-  gpio_put(RESET_PIN, 0);
-  sleep_ms(100);
-  gpio_put(RESET_PIN, 1);
-  sleep_ms(100);
+  gpio_set(RESET_PIN, 0);
+  sleep(100);
+  gpio_set(RESET_PIN, 1);
+  sleep(100);
 }
 
 static void
 init_transfer()
 {
-  gpio_put(BOOT0_PIN, 1);
-  sleep_ms(100);
+  gpio_set(BOOT0_PIN, 1);
+  sleep(100);
   reset_hw_stm();
 }
 
 static void
 reset_transfer()
 {
-  gpio_put(BOOT0_PIN, 0);
-  sleep_ms(100);
+  gpio_set(BOOT0_PIN, 0);
+  sleep(100);
   reset_hw_stm();
 }
 
