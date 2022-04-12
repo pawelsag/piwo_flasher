@@ -6,7 +6,7 @@
 #define STM32_CMD_INIT 0x7F
 #define STM32_CMD_GET	0x00
 
-typedef struct  {
+struct stm32_config {
         uint32_t bl_version;
         uint32_t version;
         uint8_t get;
@@ -21,7 +21,7 @@ typedef struct  {
         uint8_t rp;
         uint8_t ur;
         uint8_t ch; // ony with firmware > 3.3
-}stm32_config;
+};
 
 void handle_command(uint8_t *data, uint32_t size);
 void usb_transmit_msg(const char *format, ...);

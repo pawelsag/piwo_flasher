@@ -5,9 +5,9 @@
 
 #include "proto.hpp"
 constexpr int uart_timeout_ms = 3000;
-stm32_config stm_configuration;
 
-extern ring_buffer<100, uint8_t> rx_queue;
+// some day should be synchronized as well
+static stm32_config stm_configuration;
 
 void usb_transmit_msg(const char *format, ...)
 {

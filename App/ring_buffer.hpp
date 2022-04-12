@@ -48,7 +48,13 @@ struct ring_buffer{
     head = tail = 0;
   }
 
+  ring_buffer()
+  {
+  }
+
 private:
   int head=0, tail=0;
   std::array<T,S> buf;
 };
+
+inline ring_buffer<100, uint8_t> rx_queue;

@@ -2,8 +2,6 @@
 #include "config.h"
 #include "ring_buffer.hpp"
 
-ring_buffer<100, uint8_t> rx_queue;
-
 void init_uart()
 {
    // Set up our UART with a basic baud rate.
