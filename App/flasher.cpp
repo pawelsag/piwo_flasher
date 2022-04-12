@@ -99,6 +99,8 @@ stm32_init()
   uint8_t init_cmd = STM32_CMD_INIT;
   uint8_t get_cmd[2] = {STM32_CMD_GET, STM32_CMD_GET^0xff};
   uint8_t response=0x0;
+
+  rx_queue.reset();
   stm32_write(&init_cmd, 1);
 
   if(stm32_read(&response, 1) != UART_READ_OK)
@@ -336,7 +338,6 @@ handle_command(uint8_t *data, uint32_t size)
           }
 
           auto flash_init = flash_init_opt.value();
-          rx_queue.reset();
           init_transfer();
 
           if(!stm32_init())

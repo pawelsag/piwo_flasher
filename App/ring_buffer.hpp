@@ -12,11 +12,13 @@ extern "C"
 	}
 
 template<int S, typename T>
-struct ring_buffer{
+struct ring_buffer {
 
   bool push_no_wait(T item)
   {
-    sem_acquire_blocking(&sem);
+    if(try_sem_acquire(10) == false)
+      assert(false);
+
     int head_next;
     head_next = head;
 
@@ -34,7 +36,9 @@ struct ring_buffer{
 
   bool pop(T *item)
   {
-    sem_acquire_blocking(&sem);
+    if(try_sem_acquire(10) == false)
+      assert(false);
+
     if(empty())
     {
       sem_release(&sem);
@@ -47,15 +51,12 @@ struct ring_buffer{
     return true;
   }
 
-  bool empty()
-  {
-    return head == tail;
-  }
-
   void
   reset()
   {
-    sem_acquire_blocking(&sem);
+    if(try_sem_acquire(10) == false)
+      assert(false);
+
     head = tail = 0;
     sem_release(&sem);
   }
@@ -63,6 +64,20 @@ struct ring_buffer{
   ring_buffer()
   {
     sem_init(&sem, 1, 1);
+  }
+private:
+  bool try_sem_acquire(int attempts)
+  {
+    constexpr int us_to_ms= 1000;
+    while(sem_acquire_timeout_us(&sem, 100*us_to_ms) == false && attempts > 0)
+      attempts--;
+
+    return !(attempts == 0);
+  }
+
+  bool empty()
+  {
+    return head == tail;
   }
 
 private:
